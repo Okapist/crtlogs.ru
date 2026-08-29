@@ -1,0 +1,11 @@
+# Настройки прод-режима: включаются профилем SPRING_PROFILES_ACTIVE=prod
+# (см. deploy/crtlogs.service и DEPLOY.md). Локальная разработка их не затрагивает.
+server:
+  # слушать только локальный интерфейс — наружу приложение отдаёт reverse-proxy (Caddy)
+  address: 127.0.0.1
+
+ct:
+  rate-limit:
+    # за reverse-proxy все запросы приходят с 127.0.0.1 — реальный IP клиента
+    # берём из X-Forwarded-For (иначе лимит 1 rps станет общим на всех посетителей)
+    trust-forwarded: true

@@ -1,0 +1,23 @@
+# systemd-юнит приложения. Установка:
+#   sudo cp deploy/crtlogs.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now crtlogs
+# Токен /api/logs задаётся здесь (сгенерируйте свой: openssl rand -hex 24);
+# пустой CT_AUTH_TOKEN = эндпоинт закрыт.
+[Unit]
+Description=crtlogs.ru - CT log search
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=crtlogs
+Group=crtlogs
+WorkingDirectory=/opt/crtlogs
+Environment=SPRING_PROFILES_ACTIVE=prod
+Environment=SERVER_PORT=8090
+# Environment=CT_AUTH_TOKEN=<сильный токен>
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75 -jar /opt/crtlogs/crtlogs.jar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

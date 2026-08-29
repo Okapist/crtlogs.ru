@@ -1,0 +1,7 @@
+# Caddy: HTTPS от Let's Encrypt получается и продлевается автоматически
+# (нужны DNS A-запись crtlogs.ru -> IP сервера и открытые порты 80/443).
+# Установка: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+crtlogs.ru {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8090
+}
