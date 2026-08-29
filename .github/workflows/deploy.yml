@@ -14,6 +14,10 @@ on:
 
 jobs:
   deploy:
+    # Автодеплой на push включается переменной репозитория DEPLOY_ENABLED=true
+    # (Settings -> Secrets and variables -> Actions -> Variables); ручной запуск
+    # (workflow_dispatch) работает всегда, независимо от неё.
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

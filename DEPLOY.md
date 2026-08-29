@@ -64,7 +64,9 @@ ssh user@server 'sudo systemctl enable --now crtlogs'
    публичную часть — в `~/.ssh/authorized_keys` на сервере.
 2. Секреты репозитория (Settings → Secrets and variables → Actions):
    `SSH_HOST`, `SSH_USER`, `SSH_KEY` (содержимое `deploy_key`), при необходимости `SSH_PORT`.
-3. Готово: push в `master` прогоняет тесты и раскатывает jar (deploy.yml), либо
+3. Включить автодеплой: там же, вкладка **Variables** → `DEPLOY_ENABLED` = `true`
+   (без этого workflow `deploy` запускается только вручную).
+4. Готово: push в `master` прогоняет тесты и раскатывает jar, либо
    Actions → deploy → Run workflow — вручную.
 
 Обновление = `git push`; откат — повторный запуск workflow со старым коммитом
