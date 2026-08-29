@@ -158,7 +158,7 @@ final class HtmlView {
         String sortDir = "&amp;sort=" + sort + (descending ? "" : "&amp;dir=asc");
         String jsonHref = base + sortDir + (page > 1 ? "&amp;p=" + page : "");
         String pager = pager(base, sort, descending, page, totalPages);
-        String body = """
+        return """
                 <!DOCTYPE HTML>
                 <HTML>
                 <HEAD>
@@ -234,7 +234,6 @@ final class HtmlView {
                 trs.toString(),
                 pager,
                 METRIKA);
-        return body;
     }
 
     /** Пейджер «‹ Prev | Page N of M | Next ›» под таблицей Certificates. */

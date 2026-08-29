@@ -13,7 +13,6 @@ import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -183,8 +182,8 @@ public class CertificateRepository {
         List<Long> found = jdbc.query("SELECT id FROM ca WHERE name = ?",
                 (rs, i) -> rs.getLong(1), dn);
         if (!found.isEmpty()) {
-            caIds.put(dn, found.get(0));
-            return found.get(0);
+            caIds.put(dn, found.getFirst());
+            return found.getFirst();
         }
         KeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -293,7 +292,7 @@ public class CertificateRepository {
         if (rows.isEmpty()) {
             return null;
         }
-        CertRow r = rows.get(0);
+        CertRow r = rows.getFirst();
         TreeSet<String> doms = loadDomains(List.of(id)).getOrDefault(id, new TreeSet<>());
         return new CertDetails(
                 id,

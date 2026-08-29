@@ -1,13 +1,12 @@
 package ru.crt.web;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
+
 import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 import ru.crt.sync.CtEntryParser;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /** Дамп в духе openssl x509 -text на реальной записи из фикстуры. */
 class CertTextDumpTest {
@@ -36,7 +35,7 @@ class CertTextDumpTest {
                 assertTrue(dump.contains(domain), "дамп должен содержать идентификатор " + domain);
             }
             assertNotNull(CertTextDump.sha1Hex(parsed.certificate().getEncoded()));
-            assertTrue(CertTextDump.sha1Hex(parsed.certificate().getEncoded()).length() == 40);
+            assertEquals(40, CertTextDump.sha1Hex(parsed.certificate().getEncoded()).length());
         }
     }
 }

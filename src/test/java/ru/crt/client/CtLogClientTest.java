@@ -1,11 +1,11 @@
 package ru.crt.client;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import ru.crt.config.AppProperties;
+import ru.crt.sync.CtEntryParser;
+
+import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -14,10 +14,8 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import javax.net.ssl.SSLContext;
-import org.junit.jupiter.api.Test;
-import ru.crt.config.AppProperties;
-import ru.crt.sync.CtEntryParser;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /** Разбор JSON без сети: на реальной фикстуре ctlog.json и ответов логов. */
 class CtLogClientTest {
@@ -99,7 +97,7 @@ class CtLogClientTest {
         Path empty = Files.createTempFile("ct-empty-trust", ".pem");
         empty.toFile().deleteOnExit();
         Files.writeString(empty, "not a certificate\n");
-        org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+        assertThrows(IOException.class,
                 () -> CtLogClient.trustedSslContext(List.of(empty)));
     }
 }

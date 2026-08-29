@@ -88,7 +88,7 @@ class RateLimitFilterTest {
     }
 
     @Test
-    void staticRootAndApiAreTreatedDifferently() throws ServletException, IOException {
+    void staticRootAndApiAreTreatedDifferently() {
         // "/" без параметров не лимитируется
         MockHttpServletRequest root = new MockHttpServletRequest("GET", "/");
         root.setRemoteAddr("8.8.8.8");

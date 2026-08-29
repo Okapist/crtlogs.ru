@@ -146,7 +146,7 @@ public final class CertTextDump {
     /** GeneralNames: печатаем знакомые типы (DNS/URI/IP/email), остальное — hex. */
     private static void appendSan(StringBuilder s, byte[] generalNames) {
         int i = 0;
-        if (i >= generalNames.length || generalNames[i] != 0x30) {
+        if (i == generalNames.length || generalNames[i] != 0x30) {
             appendHexIndented(s, generalNames, 16);
             return;
         }
@@ -217,9 +217,10 @@ public final class CertTextDump {
     private static void appendHexIndented(StringBuilder s, byte[] value, int perLine) {
         for (int i = 0; i < value.length; i += perLine) {
             s.append("                ");
-            for (int j = i; j < Math.min(i + perLine, value.length); j++) {
+            int min = Math.min(i + perLine, value.length);
+            for (int j = i; j < min; j++) {
                 s.append(String.format("%02x", value[j] & 0xFF));
-                if (j < Math.min(i + perLine, value.length) - 1) {
+                if (j < min - 1) {
                     s.append(':');
                 }
             }

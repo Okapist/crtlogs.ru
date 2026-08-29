@@ -1,9 +1,6 @@
 package ru.crt.db;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -102,11 +99,11 @@ class CertificateRepositoryTest {
         List<CertificateRepository.NewCert> rows = fixtureCerts();
         repository.insertCertificates(rows);
 
-        String domain = rows.get(0).domains().iterator().next();
+        String domain = rows.getFirst().domains().iterator().next();
         List<SearchRow> found = repository.search(domain, false);
-        assertTrue(!found.isEmpty(), "поиск по " + domain + " должен находить вставленный сертификат");
-        SearchRow row = found.get(0);
-        assertEquals(rows.get(0).sha256().length(), 64);
+        assertFalse(found.isEmpty(), "поиск по " + domain + " должен находить вставленный сертификат");
+        SearchRow row = found.getFirst();
+        assertEquals(64, rows.getFirst().sha256().length());
         assertNotNull(row.issuer_ca_id());
         assertNotNull(row.issuer_name());
         assertNotNull(row.common_name());
@@ -115,12 +112,12 @@ class CertificateRepositoryTest {
         assertNotNull(row.entry_timestamp());
         assertEquals(found.size(), row.result_count());
 
-        Long id = row.id();
+        long id = row.id();
         CertDetails details = repository.getCertDetails(id);
         assertNotNull(details);
         assertTrue(details.pem().startsWith("-----BEGIN CERTIFICATE-----"));
         assertTrue(details.pem().endsWith("-----END CERTIFICATE-----\n"));
-        assertEquals(rows.get(0).sha256(), details.sha256());
+        assertEquals(rows.getFirst().sha256(), details.sha256());
         assertTrue(details.domains().contains(domain));
         assertNull(repository.getCertDetails(-1));
 
@@ -128,8 +125,7 @@ class CertificateRepositoryTest {
         int dot = domain.indexOf('.');
         if (dot > 0) {
             String parent = domain.substring(dot + 1);
-            assertTrue(!repository.search("%." + parent, false).isEmpty(),
-                    "wildcard %. " + parent + " должен находить " + domain);
+            assertFalse(repository.search("%." + parent, false).isEmpty(), "wildcard %. " + parent + " должен находить " + domain);
         }
 
         // повторная вставка тех же (log_url, log_index) ничего не добавляет
@@ -139,7 +135,7 @@ class CertificateRepositoryTest {
 
     @Test
     void excludeExpiredFiltersOutOldCerts() throws Exception {
-        CertificateRepository.NewCert original = fixtureCerts().get(0);
+        CertificateRepository.NewCert original = fixtureCerts().getFirst();
         String domain = original.domains().iterator().next();
         // второй, истёкший сертификат на том же домене: срок задан вручную, sha256 делаем
         // другим (в реальности один DER не может иметь разные сроки — иначе дедупликация
@@ -168,7 +164,7 @@ class CertificateRepositoryTest {
     void cachesArePopulatedThroughProxy() throws Exception {
         List<CertificateRepository.NewCert> rows = fixtureCerts();
         repository.insertCertificates(rows);
-        String domain = rows.get(0).domains().iterator().next();
+        String domain = rows.getFirst().domains().iterator().next();
 
         List<Long> ids = repository.searchIds(domain, false, 1, true);
         org.junit.jupiter.api.Assertions.assertFalse(ids.isEmpty());
@@ -178,9 +174,9 @@ class CertificateRepositoryTest {
         List<SearchRow> found = repository.searchRows(ids, ids.size());
         org.junit.jupiter.api.Assertions.assertFalse(found.isEmpty());
 
-        CertDetails details = repository.getCertDetails(found.get(0).id());
+        CertDetails details = repository.getCertDetails(found.getFirst().id());
         assertNotNull(details);
-        assertNotNull(cacheManager.getCache("certById").get(found.get(0).id()),
+        assertNotNull(cacheManager.getCache("certById").get(found.getFirst().id()),
                 "детали сертификата должны попасть в кеш certById");
         assertNull(cacheManager.getCache("certById").get(-1L),
                 "null-результат не кешируется");
@@ -190,19 +186,19 @@ class CertificateRepositoryTest {
     void searchRowsPageKeepsTotalInResultCount() throws Exception {
         List<CertificateRepository.NewCert> rows = fixtureCerts();
         repository.insertCertificates(rows);
-        String domain = rows.get(0).domains().iterator().next();
+        String domain = rows.getFirst().domains().iterator().next();
 
         List<Long> ids = repository.searchIds(domain, false, 1, true);
-        assertTrue(ids.size() >= 1);
+        assertFalse(ids.isEmpty());
         List<SearchRow> page = repository.searchRows(ids.subList(0, 1), ids.size());
         assertEquals(1, page.size(), "страница — только переданные id");
-        assertEquals(ids.size(), page.get(0).result_count(),
+        assertEquals(ids.size(), page.getFirst().result_count(),
                 "result_count — общее число совпадений, а не размер страницы");
     }
 
     @Test
     void sameCertificateFoundInMultipleLogs() throws Exception {
-        CertificateRepository.NewCert original = fixtureCerts().get(0);
+        CertificateRepository.NewCert original = fixtureCerts().getFirst();
         // тот же DER/sha256, но другой лог и записан на час раньше — как повторная подача
         // в другой CT-лог; домены в реальности берутся из DER, поэтому у копий совпадают
         CertificateRepository.NewCert inOtherLog = new CertificateRepository.NewCert(
@@ -223,7 +219,7 @@ class CertificateRepositoryTest {
         List<SearchRow> found = repository.search(original.domains().iterator().next(), false);
         assertEquals(1, found.size(), "дубликат в нескольких логах — одна строка поиска, как у crt.sh");
 
-        CertDetails details = repository.getCertDetails(found.get(0).id());
+        CertDetails details = repository.getCertDetails(found.getFirst().id());
         assertEquals("https://other.example/log/", details.log_url(),
                 "показывается самое раннее попадание в лог");
         assertEquals(2, details.occurrences().size(),
@@ -237,7 +233,7 @@ class CertificateRepositoryTest {
         List<CertificateRepository.NewCert> rows = fixtureCerts();
         repository.insertCertificates(rows);
         Set<Long> issuerIds = new TreeSet<>();
-        for (SearchRow r : repository.search(rows.get(0).domains().iterator().next(), false)) {
+        for (SearchRow r : repository.search(rows.getFirst().domains().iterator().next(), false)) {
             issuerIds.add(r.issuer_ca_id());
         }
         assertEquals(1, issuerIds.size(), "все сертификаты одного издателя — один issuer_ca_id");
