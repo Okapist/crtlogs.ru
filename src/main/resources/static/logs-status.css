@@ -1,0 +1,45 @@
+/* Виджет «Статус CT-логов». Подключается и главной (index.html), и серверной
+   страницей результатов (HtmlView) — стили держим здесь, чтобы не расходились. */
+#logs {
+  margin-top: 60px;
+}
+#logs h2 {
+  font: bold italic 12pt "DM Sans", sans-serif;
+  color: #888888;
+  margin: 0 0 8px;
+}
+#logs .status {
+  font: 8pt "DM Sans", sans-serif;
+  color: #888888;
+}
+#logs table {
+  width: 100%;
+}
+#logs td, #logs th {
+  font: 8pt "DM Sans", sans-serif;
+  padding: 2px 8px;
+}
+#logs .ok {
+  color: #060;
+  font-weight: bold;
+}
+#logs .err {
+  color: #900;
+  font-weight: bold;
+}
+#logs .muted {
+  color: #777;
+  font-size: 8pt;
+}
+#logs .bar {
+  width: 90px;
+  height: 6px;
+  background: #e3e3e3;
+  display: inline-block;
+  vertical-align: middle;
+}
+#logs .bar i {
+  display: block;
+  height: 100%;
+  background: #015258;
+}

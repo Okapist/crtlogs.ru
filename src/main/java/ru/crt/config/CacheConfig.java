@@ -8,9 +8,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Два кеша с разной политикой: сертификаты иммутабельны (certById — долго),
- * списки id поиска устаревают по мере синка (search — 5 мин: синк раз в 10 мин,
- * а пейджинг по большой выборке не должен пересчитывать её на каждом листании).
+ * Два кеша с разной политикой. certById — долго: DER и текстовый дамп неизменны,
+ * а меняющийся кусок деталей (occurrences — список логов с этим сертификатом)
+ * сбрасывается явно из CertificateRepository.insertCertificates при синке.
+ * search — 5 мин: синк раз в 10 мин, а пейджинг по большой выборке не должен
+ * пересчитывать счётчик и окно на каждом листании.
  */
 @Configuration
 public class CacheConfig {
@@ -22,8 +24,10 @@ public class CacheConfig {
                 .maximumSize(1000)
                 .expireAfterAccess(Duration.ofHours(1))
                 .build());
+        // записей больше, чем раньше (счётчик + по записи на страницу), но каждая теперь
+        // не больше сотни id, а не вся выборка целиком — суммарно это единицы мегабайт
         manager.registerCustomCache("search", Caffeine.newBuilder()
-                .maximumSize(500)
+                .maximumSize(2000)
                 .expireAfterWrite(Duration.ofMinutes(5))
                 .build());
         return manager;

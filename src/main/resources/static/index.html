@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>crtlogs.ru | Certificate Search</title>
 <LINK href="//fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,700&family=Urbanist:wght@700&family=Roboto+Mono&display=swap" rel="stylesheet">
+<LINK href="/logs-status.css" rel="stylesheet">
 <STYLE type="text/css">
   /* --- дизайн crt.sh --- */
   a {
@@ -44,48 +45,6 @@
     gap: 32px;
     flex-wrap: wrap;
   }
-  .header-extras {
-    position: absolute;
-    left: calc(50% + 250px);
-    top: 50%;
-    transform: translateY(-50%);
-    display: none;
-    align-items: center;
-    gap: 24px
-  }
-  body.state-results .header-extras {
-    display: flex
-  }
-  .header-icons {
-    display: flex;
-    align-items: center;
-    gap: 16px
-  }
-  .header-icons A {
-    display: inline-flex
-  }
-  table {
-    border-collapse: collapse;
-    color: #222222;
-    font: 10pt "DM Sans", sans-serif;
-    margin-left: auto;
-    margin-right: auto;
-  }
-  td, th {
-    border: 1px solid #CCCCCC;
-    padding: 0px 2px;
-    text-align: left;
-    vertical-align: top
-  }
-  td.outer, th.outer {
-    border: 1px solid #CCCCCC;
-    padding: 2px 20px;
-    text-align: left
-  }
-  table.identities td {
-    font: 9pt "DM Mono", monospace;
-    padding: 4px 8px
-  }
   .input {
     border: 1px solid #015258;
     border-radius: 6px;
@@ -117,15 +76,9 @@
     text-align: center;
     margin-top: 56px
   }
-  .pager {
-    font: 10pt "DM Sans", sans-serif;
-    color: #222222;
-    margin: 8px 0
-  }
 
-  /* --- наше: подсказка, сообщения, статус логов --- */
+  /* --- наше: форма и подсказка --- */
   #searchForm { margin: 32px 0 0; }
-  body.state-results #searchForm { margin: 20px 0 0; }
   #searchForm label {
     font: 8pt "DM Sans", sans-serif;
     color: #888888;
@@ -139,51 +92,20 @@
     line-height: 1.8
   }
   #hint code { font-family: "Roboto Mono", monospace; }
-  body.state-results #hint { display: none; }
-  .msg {
-    font: 10pt "DM Sans", sans-serif;
-    color: #CC0000;
-    margin: 14px 0
-  }
-  #results { margin-top: 4px; }
-  #results table.identities { width: 100%; }
-  #logs { margin-top: 60px; }
-  #logs h2 {
-    font: bold italic 12pt "DM Sans", sans-serif;
-    color: #888888;
-    margin: 0 0 8px
-  }
-  #logs .status { font: 8pt "DM Sans", sans-serif; color: #888888; }
-  #logs table { width: 100%; }
-  #logs td, #logs th {
-    font: 8pt "DM Sans", sans-serif;
-    padding: 2px 8px
-  }
-  .ok { color: #060; font-weight: bold; }
-  .err { color: #900; font-weight: bold; }
-  .muted { color: #777; font-size: 8pt; }
-  .bar { width: 90px; height: 6px; background: #e3e3e3; display: inline-block;
-         vertical-align: middle; }
-  .bar i { display: block; height: 100%; background: #015258; }
 </STYLE>
 </head>
-<body class="state-home">
+<body>
 
   <DIV class="header">
-    <A style="text-decoration:none" href="/"><SPAN class="crtsh">crtlogs.ru</SPAN></A> <SPAN class="title" id="pageTitle">Certificate Search</SPAN>
-    <DIV class="header-extras">
-      <DIV class="header-icons">
-        <A id="jsonLink" href="#" target="_blank" rel="noopener" title="JSON output">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#015258" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1"/><path d="M16 3h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1"/></svg>
-        </A>
-      </DIV>
-    </DIV>
+    <A style="text-decoration:none" href="/"><SPAN class="crtsh">crtlogs.ru</SPAN></A> <SPAN class="title">Certificate Search</SPAN>
   </DIV>
 
+  <!-- обычный GET-submit: результаты рисует сервер (HtmlView.resultsPage), -->
+  <!-- поэтому прямая ссылка, F5 и «назад» работают без отдельной клиентской ветки -->
   <form id="searchForm" action="/" method="get">
-    <input class="input" type="text" name="q" id="q" autofocus autocomplete="off"
+    <input class="input" type="text" name="q" id="q" required autofocus autocomplete="off"
            placeholder="домен, например example.ru">
-    <label><input type="checkbox" id="excludeExpired"> только действующие</label>
+    <label><input type="checkbox" name="exclude" value="expired"> только действующие</label>
     <input class="button" type="submit" value="Search">
   </form>
 
@@ -192,232 +114,11 @@
     JSON-выдача как у crt.sh: <code>/?q=example.ru&amp;output=json</code>
   </div>
 
-  <div id="message"></div>
-  <div id="results"></div>
-
-  <div id="logs">
-    <h2>Статус CT-логов</h2>
-    <div class="status" id="logsStatus">загрузка статуса…</div>
-    <div id="logsTable"></div>
-  </div>
+  <div id="logs"></div>
 
   <p class="copyright">&copy; crtlogs.ru &mdash; поиск по российским CT-логам (Yandex, VK, Минцифры), формат API совместим с crt.sh.</p>
 
-<script>
-'use strict';
-
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
-  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const dateOnly = (s) => String(s ?? '').slice(0, 10);
-
-// --- поиск: результаты на этой же странице; сортировка и пейджинг (по 100) — серверные ---
-
-let state = { q: '', exclude: false, sort: 1, desc: true, page: 1 };
-
-$('searchForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  state.q = $('q').value.trim();
-  if (!state.q) { showMessage('Пустой запрос'); return; }
-  state.exclude = $('excludeExpired').checked;
-  state.sort = 1;
-  state.desc = true;
-  state.page = 1;
-  runSearch(true);
-});
-
-function searchUrl() {
-  let u = '/?q=' + encodeURIComponent(state.q);
-  if (state.exclude) u += '&exclude=expired';
-  if (state.sort !== 1 || !state.desc) {
-    u += '&sort=' + state.sort + (state.desc ? '' : '&dir=asc');
-  }
-  if (state.page > 1) u += '&p=' + state.page;
-  return u;
-}
-
-async function runSearch(pushState) {
-  const pageUrl = searchUrl();
-  if (pushState) history.pushState(null, '', pageUrl);
-  document.body.classList.remove('state-home');
-  document.body.classList.add('state-results');
-  $('pageTitle').textContent = 'Identity Search';
-  document.title = 'crtlogs.ru | ' + state.q;
-  $('jsonLink').href = pageUrl + '&output=json';
-  showMessage('');
-  $('results').innerHTML = '<p class="msg" style="color:#888">Поиск…</p>';
-  try {
-    const resp = await fetch(pageUrl + '&output=json');
-    if (resp.status === 429) {
-      $('results').innerHTML = '';
-      showMessage('Слишком много запросов (лимит 1 запрос/сек) — подождите секунду и повторите.');
-      return;
-    }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    renderResults(await resp.json());
-  } catch (err) {
-    $('results').innerHTML = '';
-    showMessage('Ошибка поиска: ' + err.message);
-  }
-}
-
-function renderResults(rows) {
-  const total = rows.length ? rows[0].result_count : 0;
-  const totalPages = Math.max(1, Math.ceil(total / 100));
-  const criteria = "Type: Identity&nbsp;&nbsp;&nbsp;&nbsp;Match: ILIKE&nbsp;&nbsp;&nbsp;&nbsp;Search: '"
-    + esc(state.q) + "'" + (state.exclude ? '&nbsp;&nbsp;&nbsp;&nbsp;Exclude: expired' : '');
-  const body = rows.length
-    ? rows.map((r) => `
-      <tr>
-        <td style="text-align:center"><a href="/?id=${r.id}" target="_blank" rel="noopener">${r.id}</a></td>
-        <td style="text-align:center;white-space:nowrap">${esc(dateOnly(r.entry_timestamp))}</td>
-        <td style="text-align:center;white-space:nowrap">${esc(dateOnly(r.not_before))}</td>
-        <td style="text-align:center;white-space:nowrap">${esc(dateOnly(r.not_after))}</td>
-        <td style="white-space:nowrap">${esc(r.common_name)}</td>
-        <td style="white-space:nowrap">${esc(r.name_value).replace(/\n/g, '<br>')}</td>
-        <td style="white-space:normal">${esc(r.issuer_name)}</td>
-      </tr>`).join('')
-    : '<tr><td colspan="7">No certificates found.</td></tr>';
-  $('results').innerHTML = `
-    <br>
-    <table>
-      <tr><th class="outer">Criteria</th><td class="outer">${criteria}</td></tr>
-    </table>
-    <br>
-    <table style="width:100%">
-      <tr>
-        <th class="outer" style="width:1%">Certificates</th>
-        <td class="outer">
-          <table class="identities" id="certTable">
-            <tr>
-              ${sortHeader('crtlogs.ru ID', 0)}
-              ${sortHeader('Logged At', 1)}
-              ${sortHeader('Not Before', 2)}
-              ${sortHeader('Not After', 4)}
-              <th>Common Name</th>
-              <th>Matching Identities</th>
-              ${sortHeader('Issuer Name', 3)}
-            </tr>${body}
-          </table>
-        </td>
-      </tr>
-    </table>
-    ${total > 100 ? renderPager(totalPages) : ''}`;
-  $('results').querySelectorAll('a[data-sort]').forEach((a) =>
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      const idx = Number(a.dataset.sort);
-      if (state.sort === idx) state.desc = !state.desc;
-      else { state.sort = idx; state.desc = true; }
-      state.page = 1;
-      runSearch(true);
-    }));
-  $('results').querySelectorAll('a[data-page]').forEach((a) =>
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      state.page = Number(a.dataset.page);
-      runSearch(true);
-    }));
-}
-
-function sortHeader(label, idx) {
-  const arrow = state.sort === idx ? (state.desc ? ' &#8679;' : ' &#8681;') : '';
-  return `<th style="white-space:nowrap"><a href="#" data-sort="${idx}">${label}</a>${arrow}</th>`;
-}
-
-function renderPager(totalPages) {
-  let p = '<div class="pager">';
-  if (state.page > 1) {
-    p += `<a href="#" data-page="${state.page - 1}">&#8249; Prev</a>&nbsp;&nbsp;`;
-  }
-  p += `Page ${state.page} of ${totalPages}`;
-  if (state.page < totalPages) {
-    p += `&nbsp;&nbsp;<a href="#" data-page="${state.page + 1}">Next &#8250;</a>`;
-  }
-  return p + '</div>';
-}
-
-function showMessage(text) {
-  $('message').innerHTML = text ? `<div class="msg">${esc(text)}</div>` : '';
-}
-
-function goHome() {
-  document.body.classList.remove('state-results');
-  document.body.classList.add('state-home');
-  $('pageTitle').textContent = 'Certificate Search';
-  document.title = 'crtlogs.ru | Certificate Search';
-  $('results').innerHTML = '';
-  showMessage('');
-}
-
-// прямая ссылка вида /?q=...&p=...&sort=...&dir=... — восстанавливаем состояние из URL
-function applyParams() {
-  const params = new URLSearchParams(location.search);
-  if (params.get('q')) {
-    $('q').value = params.get('q');
-    $('excludeExpired').checked = params.get('exclude') === 'expired';
-    state = {
-      q: params.get('q'),
-      exclude: params.get('exclude') === 'expired',
-      sort: [0, 1, 2, 3, 4].includes(Number(params.get('sort'))) ? Number(params.get('sort')) : 1,
-      desc: params.get('dir') !== 'asc',
-      page: Math.max(1, Number(params.get('p')) || 1),
-    };
-    runSearch(false);
-  } else {
-    goHome();
-  }
-}
-
-window.addEventListener('DOMContentLoaded', applyParams);
-
-window.addEventListener('popstate', applyParams);
-
-// --- статус логов: публичный /api/status, обновление раз в 30 с, без токена ---
-// Полные детали (тексты ошибок) — /api/logs под Bearer-токеном, пригодится на отдельной странице.
-
-let logsTimer = null;
-
-async function refreshLogs() {
-  try {
-    const resp = await fetch('/api/status');
-    if (resp.status === 429) { $('logsStatus').textContent = 'лимит запросов, повторим позже'; return; }
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    renderLogs(await resp.json());
-    scheduleLogsTimer();
-  } catch (err) {
-    $('logsStatus').textContent = 'статус недоступен: ' + err.message;
-  }
-}
-
-function renderLogs(logs) {
-  const rows = logs.map((l) => {
-    const pct = l.tree_size ? Math.min(100, Math.round(100 * l.last_synced_index / l.tree_size)) : 0;
-    const state = !l.ok ? '<span class="err">ошибка</span>'
-      : (l.last_synced_index >= l.tree_size ? '<span class="ok">ок</span>' : 'синк…');
-    return `<tr>
-      <td>${esc(l.description)}<div class="muted">${esc(l.url)}</div></td>
-      <td>${l.last_synced_index} / ${l.tree_size} <span class="bar"><i style="width:${pct}%"></i></span></td>
-      <td>${state}</td>
-      <td class="muted">${esc(l.updated_at || '')}</td>
-    </tr>`;
-  }).join('');
-  $('logsTable').innerHTML =
-    `<table><tr><th>Лог</th><th>Записей</th><th>Состояние</th><th>Обновлён</th></tr>${rows}</table>`;
-  $('logsStatus').textContent = 'обновлено ' + new Date().toLocaleTimeString();
-}
-
-function scheduleLogsTimer() {
-  stopLogsTimer();
-  logsTimer = setInterval(refreshLogs, 30000);
-}
-
-function stopLogsTimer() {
-  if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
-}
-
-refreshLogs();
-</script>
+<script src="/logs-status.js"></script>
 <!-- Yandex.Metrika counter -->
 <script type="text/javascript">
     (function(m,e,t,r,i,k,a){

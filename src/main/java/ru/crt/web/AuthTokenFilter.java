@@ -20,6 +20,8 @@ import ru.crt.config.AppProperties;
 @Order(2)
 public class AuthTokenFilter extends OncePerRequestFilter {
 
+    private static final String LOGS_PATH = "/api/logs";
+
     private final AppProperties props;
 
     public AuthTokenFilter(AppProperties props) {
@@ -28,7 +30,7 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().equals("/api/logs");
+        return !LOGS_PATH.equals(RequestPaths.normalized(request));
     }
 
     @Override

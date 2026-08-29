@@ -88,4 +88,17 @@ class AuthTokenFilterTest {
         MockHttpServletRequest root = new MockHttpServletRequest("GET", "/");
         assertTrue(filter.shouldNotFilter(root));
     }
+
+    /**
+     * Контейнер отдаёт requestURI как есть, а Spring MVC маршрутизирует по
+     * раскодированному пути без matrix-параметров — сравнение сырой строки
+     * пропускало бы эти варианты к незащищённому /api/logs.
+     */
+    @Test
+    void encodedAndMatrixFormsOfLogsPathStayProtected() {
+        for (String uri : new String[]{"/api/log%73", "/api/logs;v=1", "//api/logs", "/api/logs/"}) {
+            assertFalse(filter.shouldNotFilter(new MockHttpServletRequest("GET", uri)),
+                    uri + " должен требовать токен");
+        }
+    }
 }

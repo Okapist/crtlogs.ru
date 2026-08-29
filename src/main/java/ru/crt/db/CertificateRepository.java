@@ -19,14 +19,20 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.security.auth.x500.X500Principal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import ru.crt.client.KnownLog;
 import ru.crt.sync.CtEntryParser;
 import ru.crt.web.CertDetails;
@@ -36,6 +42,8 @@ import ru.crt.web.SearchRow;
 
 @Repository
 public class CertificateRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(CertificateRepository.class);
 
     /** ISO-дата без зоны, секунды всегда, миллисекунды при наличии — как у crt.sh. */
     private static final DateTimeFormatter ISO = new DateTimeFormatterBuilder()
@@ -50,11 +58,18 @@ public class CertificateRepository {
             """;
 
     private final JdbcTemplate jdbc;
-    /** Кеш issuer DN -> ca.id на время жизни приложения (пополняется при синке). */
-    private final Map<String, Long> caIds = new HashMap<>();
+    private final TransactionTemplate tx;
+    /**
+     * Кеш issuer DN -> ca.id на время жизни приложения. Пополняется только строками,
+     * которые уже зафиксированы: id из откатившейся транзакции указывал бы на
+     * несуществующую строку, и все следующие пачки этого издателя падали бы на
+     * внешнем ключе certificate.issuer_ca_id.
+     */
+    private final Map<String, Long> caIds = new ConcurrentHashMap<>();
 
-    public CertificateRepository(JdbcTemplate jdbc) {
+    public CertificateRepository(JdbcTemplate jdbc, PlatformTransactionManager txManager) {
         this.jdbc = jdbc;
+        this.tx = new TransactionTemplate(txManager);
     }
 
     /** Строка для вставки, которую готовит CtSyncService из разобранной записи лога. */
@@ -124,22 +139,66 @@ public class CertificateRepository {
 
     // --- вставка (синк) ---
 
-    @Transactional
-    public void insertCertificates(List<NewCert> certs) {
+    /**
+     * Вставка пачки записей лога. Быстрый путь — одна транзакция на всю пачку; если БД
+     * отвергла пачку из-за отдельной «битой» записи (SAN длиннее 255, DN длиннее 1024,
+     * слишком длинный serial), пачка повторяется по одной записи, и плохие пропускаются.
+     * Иначе одна такая запись останавливала бы лог навсегда: транзакция откатывалась бы
+     * целиком, last_synced_index не двигался, и следующий проход скачивал бы тот же
+     * диапазон. Инфраструктурные ошибки (БД недоступна) сюда не попадают и уходят
+     * наверх — тогда прогресс не двигается и пачка честно перечитывается позже.
+     *
+     * <p>Сбрасывает certById: сам сертификат иммутабелен, но в его деталях лежат
+     * occurrences() — список логов, в которых он найден, а он растёт при синке.
+     *
+     * @return сколько записей пришлось пропустить
+     */
+    @CacheEvict(cacheNames = "certById", allEntries = true)
+    public int insertCertificates(List<NewCert> certs) {
+        if (certs.isEmpty()) {
+            return 0;
+        }
+        try {
+            insertInTransaction(certs);
+            return 0;
+        } catch (DataIntegrityViolationException batchRejected) {
+            log.warn("Пачка из {} записей отклонена БД ({}), повтор по одной",
+                    certs.size(), batchRejected.getMostSpecificCause().toString());
+        }
+        int skipped = 0;
         for (NewCert c : certs) {
-            long caId = getOrCreateCa(c.issuerDn());
-            Long certId = insertCertificateReturningId(caId, c);
-            if (certId == null) {
-                continue; // запись уже была (уникальность log_url+log_index) — идемпотентность
-            }
-            List<Object[]> domainArgs = new ArrayList<>(c.domains().size());
-            for (String d : c.domains()) {
-                domainArgs.add(new Object[]{certId, d});
-            }
-            if (!domainArgs.isEmpty()) {
-                jdbc.batchUpdate("INSERT INTO cert_domain (cert_id, domain) VALUES (?, ?)", domainArgs);
+            try {
+                insertInTransaction(List.of(c));
+            } catch (DataIntegrityViolationException rejected) {
+                skipped++;
+                log.warn("Запись {}#{} отклонена БД, пропускаем: {}",
+                        c.logUrl(), c.logIndex(), rejected.getMostSpecificCause().toString());
             }
         }
+        return skipped;
+    }
+
+    /** Одна транзакция; новые ca публикуются в общий кеш только после коммита. */
+    private void insertInTransaction(List<NewCert> certs) {
+        Map<String, Long> created = new HashMap<>();
+        tx.executeWithoutResult(status -> {
+            created.clear(); // транзакция могла быть перезапущена
+            for (NewCert c : certs) {
+                long caId = getOrCreateCa(c.issuerDn(), created);
+                Long certId = insertCertificateReturningId(caId, c);
+                if (certId == null) {
+                    continue; // запись уже была (уникальность log_url+log_index) — идемпотентность
+                }
+                List<Object[]> domainArgs = new ArrayList<>(c.domains().size());
+                for (String d : c.domains()) {
+                    domainArgs.add(new Object[]{certId, d});
+                }
+                if (!domainArgs.isEmpty()) {
+                    jdbc.batchUpdate("INSERT INTO cert_domain (cert_id, domain) VALUES (?, ?)", domainArgs);
+                }
+            }
+        });
+        caIds.putAll(created);
     }
 
     private Long insertCertificateReturningId(long caId, NewCert c) {
@@ -173,16 +232,21 @@ public class CertificateRepository {
         ps.setTimestamp(index, value == null ? null : Timestamp.valueOf(value));
     }
 
-    private long getOrCreateCa(String issuerDn) {
+    /** {@code created} — ca, вставленные текущей, ещё не зафиксированной транзакцией. */
+    private long getOrCreateCa(String issuerDn, Map<String, Long> created) {
         final String dn = issuerDn == null ? "" : issuerDn;
         Long cached = caIds.get(dn);
         if (cached != null) {
             return cached;
         }
+        Long pending = created.get(dn);
+        if (pending != null) {
+            return pending;
+        }
         List<Long> found = jdbc.query("SELECT id FROM ca WHERE name = ?",
                 (rs, i) -> rs.getLong(1), dn);
         if (!found.isEmpty()) {
-            caIds.put(dn, found.getFirst());
+            caIds.put(dn, found.getFirst()); // строка зафиксирована ранее — кешируем сразу
             return found.getFirst();
         }
         KeyHolder keys = new GeneratedKeyHolder();
@@ -193,7 +257,7 @@ public class CertificateRepository {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        caIds.put(dn, id);
+        created.put(dn, id);
         return id;
     }
 
@@ -202,28 +266,55 @@ public class CertificateRepository {
     /**
      * Поиск в семантике crt.sh: точное совпадение identity, поддомены через wildcard
      * (символы % и _ пользователя передаются в LIKE как есть). Для тестов — целиком,
-     * без кеша и пейджинга; рабочий путь идёт через searchIds + searchRows.
+     * без кеша и пейджинга; рабочий путь идёт через searchCount + searchIdsPage.
      */
     public List<SearchRow> search(String q, boolean excludeExpired) {
-        List<Long> ids = searchIds(q, excludeExpired, SORT_LOGGED_AT, true);
-        return searchRows(ids, ids.size());
+        int total = searchCount(q, excludeExpired);
+        return searchRows(searchIdsPage(q, excludeExpired, SORT_LOGGED_AT, true, 0, total), total);
+    }
+
+    /** Запрос считается шаблоном, если содержит подстановочные символы LIKE. */
+    public static boolean isWildcard(String q) {
+        return q.indexOf('%') >= 0 || q.indexOf('_') >= 0;
     }
 
     /**
-     * Id уникальных сертификатов в порядке сортировки sort/dir, как у crt.sh:
-     * 0 = ID, 1 = Logged At, 2 = Not Before, 3 = Issuer Name, 4 = Not After.
+     * Общее число уникальных сертификатов по запросу — для пейджера и result_count.
+     * Кешируется вместе с нулём: иначе шаблон без совпадений пересканировал бы
+     * cert_domain на каждом запросе, и лимит по IP обходился бы простым перебором.
+     */
+    @Cacheable(cacheNames = "search", key = "'n:' + #p0 + ':' + (#p1 ? 'expired' : '')")
+    public int searchCount(String q, boolean excludeExpired) {
+        Integer total = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM (
+                  SELECT ROW_NUMBER() OVER (PARTITION BY c.sha256
+                             ORDER BY c.entry_ts NULLS LAST, c.id) AS rn
+                  FROM certificate c
+                  JOIN cert_domain d ON d.cert_id = c.id
+                  WHERE %s%s
+                ) t
+                WHERE t.rn = 1
+                """.formatted(match(q), expiry(excludeExpired)),
+                Integer.class, q.toLowerCase(Locale.ROOT));
+        return total == null ? 0 : total;
+    }
+
+    /**
+     * Одна страница id уникальных сертификатов в порядке сортировки sort/dir, как у
+     * crt.sh: 0 = ID, 1 = Logged At, 2 = Not Before, 3 = Issuer Name, 4 = Not After.
      * Дубли (тот же sha256 в разных логах) сворачиваются в SQL — одна строка на
-     * сертификат, самое раннее попадание в любой лог. Без DER: список лёгкий и
-     * кешируется, страница результатов берёт из него только нужную сотню (searchRows).
+     * сертификат, самое раннее попадание в любой лог. Окно режется в БД (LIMIT/OFFSET),
+     * а не в Java: на широком шаблоне выборка — миллионы строк, и materialize всего
+     * списка ради сотни на странице клал бы кучу.
      */
     @Cacheable(cacheNames = "search",
-            key = "#p0 + ':' + (#p1 ? 'expired' : '') + ':' + #p2 + ':' + #p3",
-            unless = "#result.isEmpty()")
-    public List<Long> searchIds(String q, boolean excludeExpired, int sort, boolean descending) {
-        String norm = q.toLowerCase(Locale.ROOT);
-        boolean wildcard = norm.indexOf('%') >= 0 || norm.indexOf('_') >= 0;
-        String match = wildcard ? "d.domain LIKE ?" : "d.domain = ?";
-        String expiry = excludeExpired ? " AND c.not_after >= CURRENT_TIMESTAMP" : "";
+            key = "'p:' + #p0 + ':' + (#p1 ? 'expired' : '') + ':' + #p2 + ':' + #p3"
+                    + " + ':' + #p4 + ':' + #p5")
+    public List<Long> searchIdsPage(String q, boolean excludeExpired, int sort, boolean descending,
+                                    int offset, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
         String sortExpr = switch (sort) {
             case 0 -> "t.id";
             case 2 -> "t.not_before";
@@ -245,8 +336,17 @@ public class CertificateRepository {
                 ) t
                 WHERE t.rn = 1
                 ORDER BY %s %s, t.id %s
-                """.formatted(match, expiry, sortExpr, dir, dir),
-                (rs, i) -> rs.getLong(1), norm);
+                LIMIT ? OFFSET ?
+                """.formatted(match(q), expiry(excludeExpired), sortExpr, dir, dir),
+                (rs, i) -> rs.getLong(1), q.toLowerCase(Locale.ROOT), limit, Math.max(0, offset));
+    }
+
+    private static String match(String q) {
+        return isWildcard(q) ? "d.domain LIKE ?" : "d.domain = ?";
+    }
+
+    private static String expiry(boolean excludeExpired) {
+        return excludeExpired ? " AND c.not_after >= CURRENT_TIMESTAMP" : "";
     }
 
     /**

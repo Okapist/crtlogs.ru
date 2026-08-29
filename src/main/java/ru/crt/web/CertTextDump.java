@@ -1,6 +1,8 @@
 package ru.crt.web;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.PublicKey;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
@@ -10,12 +12,18 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import javax.security.auth.x500.X500Principal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Текстовый дамп сертификата в духе {@code openssl x509 -text} — как на странице
@@ -24,6 +32,8 @@ import javax.security.auth.x500.X500Principal;
  * X509v3 extensions / Signature Algorithm.
  */
 public final class CertTextDump {
+
+    private static final Logger log = LoggerFactory.getLogger(CertTextDump.class);
 
     private CertTextDump() {
     }
@@ -69,6 +79,17 @@ public final class CertTextDump {
         } catch (CertificateException e) {
             return null;
         }
+        try {
+            return dump(c);
+        } catch (RuntimeException e) {
+            // содержимое сертификата приходит из публичного CT-лога, то есть от кого угодно:
+            // страница не должна отдавать 500 из-за одной кривой записи — вызывающий покажет PEM
+            log.warn("Не удалось построить дамп сертификата: {}", e.toString());
+            return null;
+        }
+    }
+
+    private static String dump(X509Certificate c) {
         StringBuilder s = new StringBuilder();
         s.append("Certificate:\n    Data:\n");
         s.append("        Version: ").append(c.getVersion())
@@ -92,36 +113,155 @@ public final class CertTextDump {
 
     private static void appendDn(StringBuilder s, String label, X500Principal dn) {
         s.append("        ").append(label).append(":\n");
-        for (Map.Entry<String, String> e : parseRdns(dn.getName()).entrySet()) {
-            String name = DN_NAMES.getOrDefault(e.getKey(), e.getKey());
-            s.append("                ").append(String.format("%-18s", name))
-                    .append("= ").append(e.getValue()).append('\n');
+        for (Rdn rdn : parseRdns(dn.getName())) {
+            String name = DN_NAMES.getOrDefault(rdn.type(), rdn.type());
+            // 24 — по самому длинному имени из DN_NAMES (organizationalUnitName), иначе
+            // у длинных имён пропадал пробел перед '='
+            s.append("                ").append(String.format("%-24s", name))
+                    .append("= ").append(rdn.value()).append('\n');
         }
     }
 
-    /** RFC 2253 DN -> упорядоченные пары (тип, значение); один тип может встретиться дважды. */
-    private static LinkedHashMap<String, String> parseRdns(String rfc2253) {
-        LinkedHashMap<String, String> out = new LinkedHashMap<>();
-        for (String rdn : rfc2253.split(",")) {
-            int eq = rdn.indexOf('=');
+    /** Одна пара «тип RDN — значение»; список, а не Map: один тип встречается дважды (OU=Ops,OU=IT). */
+    record Rdn(String type, String value) {
+    }
+
+    /**
+     * RFC 2253 DN -> упорядоченные пары (тип, значение). Разделители RDN (',' и '+')
+     * ищутся только неэкранированные: в {@code CN=Foo\, Inc.,O=Bar} запятая внутри CN
+     * экранирована обратным слэшем, и наивный split по ',' разорвал бы значение.
+     * Пакет-private для unit-теста.
+     */
+    static List<Rdn> parseRdns(String rfc2253) {
+        List<Rdn> out = new ArrayList<>();
+        for (String rdn : splitUnescaped(rfc2253)) {
+            int eq = indexOfUnescaped(rdn, '=');
             if (eq <= 0) {
                 continue;
             }
-            out.put(rdn.substring(0, eq).trim().toUpperCase(Locale.ROOT),
-                    rdn.substring(eq + 1).trim());
+            String raw = rdn.substring(eq + 1).trim();
+            out.add(new Rdn(rdn.substring(0, eq).trim().toUpperCase(Locale.ROOT),
+                    raw.startsWith("#") ? decodeHexValue(raw) : unescape(raw)));
         }
         return out;
     }
 
-    private static void appendExtensions(StringBuilder s, X509Certificate c) {
-        Set<String> oids = c.getCriticalExtensionOIDs();
-        if (oids == null) {
-            return;
+    /**
+     * Значение в форме {@code #hex} (RFC 2253) — это DER-кодирование атрибута; для
+     * строковых типов печатаем текст, как openssl, иначе оставляем hex как есть.
+     */
+    private static String decodeHexValue(String value) {
+        byte[] der;
+        try {
+            der = HexFormat.of().parseHex(value.substring(1));
+        } catch (IllegalArgumentException e) {
+            return value;
         }
+        int lenBytes = derLengthBytes(der, 1);
+        int len = derLength(der, 1);
+        int start = lenBytes < 0 ? -1 : 1 + lenBytes;
+        if (len < 0 || start < 0 || start > der.length || len > der.length - start) {
+            return value;
+        }
+        return switch (der[0] & 0xFF) {
+            case 0x0C, 0x13, 0x16 -> // UTF8String, PrintableString, IA5String
+                    new String(der, start, len, StandardCharsets.UTF_8);
+            case 0x14 -> new String(der, start, len, StandardCharsets.ISO_8859_1); // T61String
+            case 0x1E -> new String(der, start, len, StandardCharsets.UTF_16BE);   // BMPString
+            default -> value;
+        };
+    }
+
+    /** Делит DN по неэкранированным ',' и '+'; само экранирование снимается позже в unescape. */
+    private static List<String> splitUnescaped(String dn) {
+        List<String> parts = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean escaped = false;
+        for (int i = 0; i < dn.length(); i++) {
+            char ch = dn.charAt(i);
+            if (escaped) {
+                cur.append('\\').append(ch);
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == ',' || ch == '+') {
+                parts.add(cur.toString());
+                cur.setLength(0);
+            } else {
+                cur.append(ch);
+            }
+        }
+        if (escaped) {
+            cur.append('\\'); // висящий слэш в конце — отдаём как есть
+        }
+        parts.add(cur.toString());
+        return parts;
+    }
+
+    private static int indexOfUnescaped(String s, char target) {
+        boolean escaped = false;
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == target) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Снимает экранирование RFC 2253: {@code \c} и цепочки {@code \XX} (байты UTF-8). */
+    private static String unescape(String value) {
+        if (value.indexOf('\\') < 0) {
+            return value;
+        }
+        StringBuilder out = new StringBuilder(value.length());
+        int i = 0;
+        while (i < value.length()) {
+            if (value.charAt(i) != '\\' || i + 1 >= value.length()) {
+                out.append(value.charAt(i++));
+                continue;
+            }
+            if (hexPairAt(value, i) < 0) {
+                out.append(value.charAt(i + 1)); // обычное \c
+                i += 2;
+                continue;
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            int b;
+            while ((b = hexPairAt(value, i)) >= 0) {
+                bytes.write(b);
+                i += 3;
+            }
+            out.append(bytes.toString(StandardCharsets.UTF_8));
+        }
+        return out.toString();
+    }
+
+    /** Байт из {@code \XX} по смещению off или -1, если там не эта форма. */
+    private static int hexPairAt(String s, int off) {
+        if (off + 2 >= s.length() || s.charAt(off) != '\\') {
+            return -1;
+        }
+        int hi = Character.digit(s.charAt(off + 1), 16);
+        int lo = Character.digit(s.charAt(off + 2), 16);
+        return hi < 0 || lo < 0 ? -1 : (hi << 4) | lo;
+    }
+
+    private static void appendExtensions(StringBuilder s, X509Certificate c) {
+        // объединение критичных и некритичных: проверять на null только критичные нельзя,
+        // иначе у сертификата без критичных расширений пропадали бы SAN и SCT
         LinkedHashMap<String, Boolean> all = new LinkedHashMap<>();
-        oids.forEach(oid -> all.put(oid, true));
-        if (c.getNonCriticalExtensionOIDs() != null) {
-            c.getNonCriticalExtensionOIDs().forEach(oid -> all.putIfAbsent(oid, false));
+        Set<String> critical = c.getCriticalExtensionOIDs();
+        if (critical != null) {
+            critical.forEach(oid -> all.put(oid, true));
+        }
+        Set<String> nonCritical = c.getNonCriticalExtensionOIDs();
+        if (nonCritical != null) {
+            nonCritical.forEach(oid -> all.putIfAbsent(oid, false));
         }
         if (all.isEmpty()) {
             return;
@@ -143,26 +283,34 @@ public final class CertTextDump {
         }
     }
 
-    /** GeneralNames: печатаем знакомые типы (DNS/URI/IP/email), остальное — hex. */
+    /**
+     * GeneralNames: печатаем знакомые типы (DNS/URI/IP/email), остальное — hex.
+     * Байты приходят из публичного CT-лога, поэтому каждая длина проверяется по границам:
+     * на испорченном TLV печатаем разобранное и останавливаемся, а не падаем.
+     */
     private static void appendSan(StringBuilder s, byte[] generalNames) {
-        int i = 0;
-        if (i == generalNames.length || generalNames[i] != 0x30) {
+        int seqLenBytes = derLengthBytes(generalNames, 1);
+        if (generalNames.length < 2 || generalNames[0] != 0x30 || seqLenBytes < 0) {
             appendHexIndented(s, generalNames, 16);
             return;
         }
-        i++;
-        i += derLengthBytes(generalNames, i); // пропускаем длину SEQUENCE
+        int i = 1 + seqLenBytes; // пропускаем тег и длину SEQUENCE
         while (i < generalNames.length) {
             int tag = generalNames[i] & 0xFF;
             int lenBytes = derLengthBytes(generalNames, i + 1);
             int len = derLength(generalNames, i + 1);
+            if (lenBytes < 0 || len < 0) {
+                return;
+            }
             int start = i + 1 + lenBytes;
-            byte[] value = new byte[len];
-            System.arraycopy(generalNames, start, value, 0, Math.min(len, generalNames.length - start));
+            if (start > generalNames.length || len > generalNames.length - start) {
+                return; // TLV обрезан
+            }
+            byte[] value = Arrays.copyOfRange(generalNames, start, start + len);
             switch (tag) {
-                case 0x81 -> s.append("                email:").append(new String(value)).append('\n');
-                case 0x82 -> s.append("                DNS:").append(new String(value)).append('\n');
-                case 0x86 -> s.append("                URI:").append(new String(value)).append('\n');
+                case 0x81 -> s.append("                email:").append(text(value)).append('\n');
+                case 0x82 -> s.append("                DNS:").append(text(value)).append('\n');
+                case 0x86 -> s.append("                URI:").append(text(value)).append('\n');
                 case 0x87 -> s.append("                IP:").append(ipString(value)).append('\n');
                 default -> {
                     s.append("                othername:");
@@ -173,32 +321,57 @@ public final class CertTextDump {
         }
     }
 
-    /** getExtensionValue возвращает DER OCTET STRING — снимаем внешнюю обёртку. */
-    private static byte[] unwrapOctetString(byte[] der) {
+    /** Значения GeneralName — IA5String; кодировку задаём явно, а не платформенную. */
+    private static String text(byte[] value) {
+        return new String(value, StandardCharsets.UTF_8);
+    }
+
+    /** getExtensionValue возвращает DER OCTET STRING — снимаем внешнюю обёртку. Пакет-private для теста. */
+    static byte[] unwrapOctetString(byte[] der) {
         if (der == null || der.length < 2 || der[0] != 0x04) {
             return der;
         }
         int lenBytes = derLengthBytes(der, 1);
         int len = derLength(der, 1);
-        byte[] out = new byte[len];
-        System.arraycopy(der, 1 + lenBytes, out, 0, Math.min(len, der.length - 1 - lenBytes));
-        return out;
+        if (lenBytes < 0 || len < 0) {
+            return der;
+        }
+        int start = 1 + lenBytes;
+        if (start > der.length || len > der.length - start) {
+            return der; // обёртка обрезана — отдаём как есть
+        }
+        return Arrays.copyOfRange(der, start, start + len);
     }
 
-    private static int derLength(byte[] der, int off) {
+    /**
+     * Длина DER-значения по смещению off или -1, если поле длины не читается:
+     * выход за границы, неопределённая форма или длина, не влезающая в int.
+     * Пакет-private для unit-теста.
+     */
+    static int derLength(byte[] der, int off) {
+        if (off < 0 || off >= der.length) {
+            return -1;
+        }
         int first = der[off] & 0xFF;
         if ((first & 0x80) == 0) {
             return first;
         }
         int count = first & 0x7F;
-        int len = 0;
+        if (count == 0 || count > 4 || off + count >= der.length) {
+            return -1;
+        }
+        long len = 0;
         for (int i = 0; i < count; i++) {
             len = (len << 8) | (der[off + 1 + i] & 0xFF);
         }
-        return len;
+        return len > Integer.MAX_VALUE ? -1 : (int) len;
     }
 
+    /** Сколько байт занимает поле длины по смещению off, или -1, если оно за границей. */
     private static int derLengthBytes(byte[] der, int off) {
+        if (off < 0 || off >= der.length) {
+            return -1;
+        }
         int first = der[off] & 0xFF;
         return (first & 0x80) == 0 ? 1 : 1 + (first & 0x7F);
     }

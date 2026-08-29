@@ -37,7 +37,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (!props.getRateLimit().isEnabled()) {
             return true;
         }
-        String path = request.getRequestURI();
+        String path = RequestPaths.normalized(request);
         if (path.startsWith("/api/")) {
             return false;
         }
@@ -88,8 +88,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
     /** Чистка бакетов, не использовавшихся дольше минуты (вызов раз в 10 минут). */
     @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 600_000)
     public void cleanupIdleBuckets() {
-        long threshold = System.nanoTime() - 60_000_000_000L;
-        buckets.entrySet().removeIf(e -> e.getValue().lastAccessNanos() < threshold);
+        // сравниваем разность, а не абсолютные значения: nanoTime переполняется,
+        // и тогда «lastAccess < now - минута» выбросило бы либо всё, либо ничего
+        long now = System.nanoTime();
+        buckets.entrySet().removeIf(e -> now - e.getValue().lastAccessNanos() > 60_000_000_000L);
     }
 
     static void writeJson(HttpServletResponse response, String body) throws IOException {

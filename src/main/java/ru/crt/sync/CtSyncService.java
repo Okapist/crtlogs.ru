@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,13 +22,21 @@ import ru.crt.db.CertificateRepository;
 
 /**
  * Инкрементальная синхронизация всех логов из ctlog.json в локальную БД.
- * Ошибка одного лога (например, недоступный Минцифры) не останавливает остальные;
- * прогресс каждого лога сохраняется в ct_log.last_synced_index.
+ * Логи обходятся по кругу срезами по {@link #BATCHES_PER_SLICE} пачек, поэтому большой
+ * лог не занимает проход целиком. Ошибка одного лога (например, недоступный Минцифры)
+ * не останавливает остальные; прогресс каждого лога сохраняется в ct_log.last_synced_index.
  */
 @Service
 public class CtSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(CtSyncService.class);
+
+    /**
+     * Сколько пачек подряд берём у одного лога, прежде чем перейти к следующему.
+     * Без такого среза первый же большой лог занимал бы проход целиком (догон
+     * миллионов записей идёт часами), и остальные логи не синкались бы вообще.
+     */
+    private static final int BATCHES_PER_SLICE = 20;
 
     private final CtLogClient client;
     private final CertificateRepository repository;
@@ -44,7 +51,11 @@ public class CtSyncService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
-        CompletableFuture.runAsync(this::syncAll); // первый синк не блокирует старт HTTP
+        // первый синк не блокирует старт HTTP; отдельный поток, а не ForkJoinPool.commonPool:
+        // синк — это блокирующие HTTP и JDBC, а commonPool на 1-2 ядрах имеет один воркер
+        Thread worker = new Thread(this::syncAll, "ct-sync-initial");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     @Scheduled(fixedDelayString = "${ct.sync-interval:PT10M}")
@@ -63,8 +74,17 @@ public class CtSyncService {
         }
         try {
             Map<String, Long> progress = repository.loadSyncProgress();
-            for (KnownLog ctLog : knownLogs()) {
-                syncOneLog(ctLog, progress.getOrDefault(ctLog.url(), 0L));
+            // круговой обход: каждый лог получает срез из BATCHES_PER_SLICE пачек и
+            // уступает следующему, пока не догонит свой tree_size или не отвалится
+            List<KnownLog> pending = knownLogs();
+            while (!pending.isEmpty()) {
+                List<KnownLog> next = new ArrayList<>(pending.size());
+                for (KnownLog ctLog : pending) {
+                    if (syncSlice(ctLog, progress)) {
+                        next.add(ctLog);
+                    }
+                }
+                pending = next;
             }
         } catch (Exception e) {
             log.warn("Ошибка прохода синхронизации: {}", e.toString());
@@ -87,15 +107,27 @@ public class CtSyncService {
         }
     }
 
-    private void syncOneLog(KnownLog ctLog, long startIndex) {
+    /**
+     * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек, сохраняя прогресс
+     * в {@code progress} и в БД после каждой пачки.
+     *
+     * @return true, если лог догнан не полностью и его надо взять на следующем круге
+     */
+    private boolean syncSlice(KnownLog ctLog, Map<String, Long> progress) {
+        long processed = progress.getOrDefault(ctLog.url(), 0L);
         try {
             long treeSize = client.getSth(ctLog.url()).tree_size();
-            long processed = startIndex;
-            while (processed < treeSize) {
+            for (int batch = 0; batch < BATCHES_PER_SLICE; batch++) {
+                if (processed >= treeSize) {
+                    repository.updateLogState(ctLog.url(), treeSize, null, null); // tree_size / снять ошибку
+                    return false;
+                }
                 long end = Math.min(processed + props.getBatchSize() - 1, treeSize - 1);
                 List<CtLogClient.EntryDoc> entries = client.getEntries(ctLog.url(), processed, end);
                 if (entries.isEmpty()) {
-                    break; // сервер отдал меньше запрошенного до конца — продолжим в следующий проход
+                    // сервер отдал меньше запрошенного до конца — продолжим в следующий проход
+                    repository.updateLogState(ctLog.url(), treeSize, null, null);
+                    return false;
                 }
                 List<CertificateRepository.NewCert> rows = new ArrayList<>(entries.size());
                 for (int i = 0; i < entries.size(); i++) {
@@ -106,16 +138,20 @@ public class CtSyncService {
                         log.warn("Запись {}#{} не разобрана, пропускаем: {}", ctLog.url(), index, e.toString());
                     }
                 }
-                repository.insertCertificates(rows);
+                int skipped = repository.insertCertificates(rows);
                 processed += entries.size(); // продвигаемся на фактическое количество
                 repository.updateLogState(ctLog.url(), treeSize, processed, null);
-                log.info("Синк {}: {}/{} записей", ctLog.description(), processed, treeSize);
+                log.info("Синк {}: {}/{} записей{}", ctLog.description(), processed, treeSize,
+                        skipped > 0 ? " (не вставлено " + skipped + ")" : "");
             }
-            repository.updateLogState(ctLog.url(), treeSize, null, null); // обновить tree_size / снять ошибку
+            return true; // срез исчерпан, лог ещё не догнан
         } catch (Exception e) {
             String message = truncate(e.toString(), 1000);
             log.warn("Лог {} недоступен: {}", ctLog.url(), message);
             repository.updateLogState(ctLog.url(), null, null, message);
+            return false; // до следующего прохода
+        } finally {
+            progress.put(ctLog.url(), processed);
         }
     }
 

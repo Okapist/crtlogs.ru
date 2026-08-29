@@ -16,6 +16,7 @@ final class HtmlView {
     /** Шрифты и CSS страницы результатов — по образцу crt.sh (?q=...). */
     private static final String SEARCH_STYLE = """
             <LINK href="//fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,700&family=Urbanist:wght@700&family=Roboto+Mono&display=swap" rel="stylesheet">
+            <LINK href="/logs-status.css" rel="stylesheet">
             <STYLE type="text/css">
               a {
                 color: #015258;
@@ -215,7 +216,10 @@ final class HtmlView {
 
                   <BR><BR><BR>
 
+                  <DIV id="logs"></DIV>
+
                   <P class="copyright">&copy; crtlogs.ru &mdash; поиск по российским CT-логам (Yandex, VK, Минцифры), формат API совместим с crt.sh.</P>
+                <SCRIPT src="/logs-status.js"></SCRIPT>
                 %s
                 </BODY>
                 </HTML>
@@ -457,7 +461,7 @@ final class HtmlView {
             return "";
         }
         return s.replace("&", "&amp;").replace("<", "&lt;")
-                .replace(">", "&gt;").replace("\"", "&quot;");
+                .replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
     }
 
     /** Экранирование + переводы строк идентификаторов (name_value через '\n'). */

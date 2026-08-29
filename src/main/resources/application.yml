@@ -4,11 +4,21 @@ server:
 
 spring:
   datasource:
-    url: jdbc:h2:file:./data/ctlog;AUTO_SERVER=TRUE
+    # Без AUTO_SERVER: он поднимает TCP-сервер H2 с -tcpAllowOthers на всех интерфейсах,
+    # а пользователь по умолчанию — sa с пустым паролем, то есть любой, кто дотянется до
+    # порта, получает всю БД и RCE через CREATE ALIAS ... FOR "java.lang.Runtime.exec".
+    # Чтобы открыть файл из IDEA, остановите приложение (embedded-режим — один процесс).
+    url: jdbc:h2:file:./data/ctlog
     driver-class-name: org.h2.Driver
   sql:
     init:
       mode: always # schema.sql на каждом старте (там IF NOT EXISTS)
+  task:
+    scheduling:
+      # синк занимает поток надолго; при size=1 (значение по умолчанию) чистка бакетов
+      # RateLimitFilter не выполнялась бы, пока идёт догон большого лога
+      pool:
+        size: 2
 
 ct:
   log-list-url: https://browser-resources.s3.yandex.net/ctlog/ctlog.json

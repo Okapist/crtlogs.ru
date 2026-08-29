@@ -36,4 +36,7 @@ CREATE TABLE IF NOT EXISTS cert_domain (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cert_domain ON cert_domain(domain);
+-- обратное направление: страница результатов и /api/certs/{id} тянут домены по cert_id,
+-- без этого индекса каждый показ страницы сканировал бы всю cert_domain целиком
+CREATE INDEX IF NOT EXISTS idx_cert_domain_cert ON cert_domain(cert_id);
 CREATE INDEX IF NOT EXISTS idx_cert_sha256 ON certificate(sha256);

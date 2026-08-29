@@ -55,15 +55,20 @@ public class ApiController {
         if (q.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "пустой запрос q");
         }
+        // шаблон вида %a% не может опереться на индекс по domain и сканирует таблицу
+        // целиком; требуем осмысленную часть, иначе поиск превращается в дешёвый DoS
+        if (CertificateRepository.isWildcard(q) && q.replace("%", "").replace("_", "").length() < 3) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "слишком общий шаблон: нужно не меньше 3 символов помимо % и _");
+        }
         boolean excludeExpired = "expired".equals(exclude);
         int sortIdx = sort != null && sort >= 0 && sort <= 4 ? sort : 1;
         boolean descending = !"asc".equalsIgnoreCase(dir);
         int page = p != null && p >= 1 ? p : 1;
-        List<Long> ids = repository.searchIds(q, excludeExpired, sortIdx, descending);
-        int total = ids.size();
+        int total = repository.searchCount(q, excludeExpired);
         int from = (int) Math.min((long) (page - 1) * PAGE_SIZE, total);
-        int to = Math.min(from + PAGE_SIZE, total);
-        List<SearchRow> rows = repository.searchRows(ids.subList(from, to), total);
+        List<Long> ids = repository.searchIdsPage(q, excludeExpired, sortIdx, descending, from, PAGE_SIZE);
+        List<SearchRow> rows = repository.searchRows(ids, total);
         if ("json".equals(output)) {
             return rows;
         }

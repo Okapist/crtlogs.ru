@@ -166,13 +166,18 @@ class CertificateRepositoryTest {
         repository.insertCertificates(rows);
         String domain = rows.getFirst().domains().iterator().next();
 
-        List<Long> ids = repository.searchIds(domain, false, 1, true);
-        org.junit.jupiter.api.Assertions.assertFalse(ids.isEmpty());
-        assertNotNull(cacheManager.getCache("search").get(domain + "::1:true"),
-                "список id поиска должен попасть в кеш search");
+        int total = repository.searchCount(domain, false);
+        assertTrue(total > 0);
+        assertNotNull(cacheManager.getCache("search").get("n:" + domain + ":"),
+                "счётчик совпадений должен попасть в кеш search");
 
-        List<SearchRow> found = repository.searchRows(ids, ids.size());
-        org.junit.jupiter.api.Assertions.assertFalse(found.isEmpty());
+        List<Long> ids = repository.searchIdsPage(domain, false, 1, true, 0, 100);
+        assertFalse(ids.isEmpty());
+        assertNotNull(cacheManager.getCache("search").get("p:" + domain + "::1:true:0:100"),
+                "страница id поиска должна попасть в кеш search");
+
+        List<SearchRow> found = repository.searchRows(ids, total);
+        assertFalse(found.isEmpty());
 
         CertDetails details = repository.getCertDetails(found.getFirst().id());
         assertNotNull(details);
@@ -188,11 +193,14 @@ class CertificateRepositoryTest {
         repository.insertCertificates(rows);
         String domain = rows.getFirst().domains().iterator().next();
 
-        List<Long> ids = repository.searchIds(domain, false, 1, true);
-        assertFalse(ids.isEmpty());
-        List<SearchRow> page = repository.searchRows(ids.subList(0, 1), ids.size());
+        int total = repository.searchCount(domain, false);
+        assertTrue(total > 0);
+        // окно режется в SQL: страница не зависит от размера всей выборки
+        List<Long> ids = repository.searchIdsPage(domain, false, 1, true, 0, 1);
+        assertEquals(1, ids.size(), "LIMIT 1 должен вернуть ровно одну строку");
+        List<SearchRow> page = repository.searchRows(ids, total);
         assertEquals(1, page.size(), "страница — только переданные id");
-        assertEquals(ids.size(), page.getFirst().result_count(),
+        assertEquals(total, page.getFirst().result_count(),
                 "result_count — общее число совпадений, а не размер страницы");
     }
 
@@ -226,6 +234,41 @@ class CertificateRepositoryTest {
                 "сертификат должен показывать вхождения из обоих логов");
         assertTrue(details.occurrences().stream()
                 .anyMatch(o -> "https://other.example/log/".equals(o.log_url())));
+    }
+
+    /**
+     * Одна запись, которую отвергает БД, не должна ронять пачку: иначе транзакция
+     * откатывается целиком, last_synced_index не двигается и лог перестаёт синкаться
+     * навсегда — следующий проход скачивает и роняет тот же диапазон.
+     */
+    @Test
+    void badRecordIsSkippedAndRestOfBatchIsInserted() throws Exception {
+        CertificateRepository.NewCert good = fixtureCerts().getFirst();
+        // домен длиннее cert_domain.domain VARCHAR(255) — такую запись БД не примет
+        CertificateRepository.NewCert bad = new CertificateRepository.NewCert(
+                good.logUrl(),
+                12345, // уникальный log_index
+                good.der(),
+                "bb" + good.sha256().substring(2),
+                good.serial(),
+                good.subjectDn(),
+                good.issuerDn(),
+                good.notBefore(),
+                good.notAfter(),
+                good.entryTs(),
+                good.precert(),
+                Set.of("a".repeat(300) + ".example"));
+
+        assertEquals(1, repository.insertCertificates(List.of(bad, good)),
+                "битая запись пропускается поштучно, а не роняет всю пачку");
+
+        String domain = good.domains().iterator().next();
+        assertFalse(repository.search(domain, false).isEmpty(),
+                "соседняя запись из той же пачки должна быть вставлена");
+        // ca издателя откатился вместе с пачкой: если бы его id остался в кеше,
+        // все следующие вставки этого издателя падали бы на внешнем ключе
+        assertEquals(0, repository.insertCertificates(List.of(good)),
+                "повторная вставка того же издателя после отката должна проходить");
     }
 
     @Test
