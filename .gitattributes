@@ -1,0 +1,6 @@
+# Файлы деплоя попадают на Linux-сервер как есть — только LF,
+# иначе autocrlf на Windows может отдать их с CRLF.
+deploy/** text eol=lf
+.github/** text eol=lf
+DEPLOY.md text eol=lf
+gradlew text eol=lf
