@@ -39,14 +39,14 @@ jobs:
 
       - name: Отчёты упавших тестов
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-reports
           path: build/reports/tests/test
           retention-days: 7
 
       - name: Артефакт для деплоя
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jar
           path: build/libs/*.jar
