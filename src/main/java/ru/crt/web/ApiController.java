@@ -34,25 +34,43 @@ public class ApiController {
         return new org.springframework.web.servlet.ModelAndView("forward:/index.html");
     }
 
+    /** Размер страницы результатов — пейджинг в HTML и JSON (см. {@link #search}). */
+    static final int PAGE_SIZE = 100;
+
     /**
      * Поиск как у crt.sh: по умолчанию HTML-страница с таблицей результатов,
-     * JSON — только с {@code output=json}.
+     * JSON — только с {@code output=json}. Сортировка — {@code sort} (0 = ID,
+     * 1 = Logged At, 2 = Not Before, 3 = Issuer Name, 4 = Not After) и
+     * {@code dir=asc|desc}; по умолчанию Logged At по убыванию. Пейджинг —
+     * {@code p} (с единицы), по {@value #PAGE_SIZE} строк; {@code result_count}
+     * в JSON — общее число совпадений.
      */
     @GetMapping(value = "/", params = {"q", "!d", "!id"})
     public Object search(@RequestParam String q,
                          @RequestParam(required = false) String output,
-                         @RequestParam(required = false) String exclude) {
+                         @RequestParam(required = false) String exclude,
+                         @RequestParam(required = false) Integer sort,
+                         @RequestParam(required = false) String dir,
+                         @RequestParam(required = false) Integer p) {
         if (q.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "пустой запрос q");
         }
         boolean excludeExpired = "expired".equals(exclude);
-        List<SearchRow> rows = repository.search(q, excludeExpired);
+        int sortIdx = sort != null && sort >= 0 && sort <= 4 ? sort : 1;
+        boolean descending = !"asc".equalsIgnoreCase(dir);
+        int page = p != null && p >= 1 ? p : 1;
+        List<Long> ids = repository.searchIds(q, excludeExpired, sortIdx, descending);
+        int total = ids.size();
+        int from = (int) Math.min((long) (page - 1) * PAGE_SIZE, total);
+        int to = Math.min(from + PAGE_SIZE, total);
+        List<SearchRow> rows = repository.searchRows(ids.subList(from, to), total);
         if ("json".equals(output)) {
             return rows;
         }
+        int totalPages = (total + PAGE_SIZE - 1) / PAGE_SIZE;
         return ResponseEntity.ok()
                 .contentType(new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8))
-                .body(HtmlView.resultsPage(q, excludeExpired, rows));
+                .body(HtmlView.resultsPage(q, excludeExpired, rows, sortIdx, descending, page, totalPages));
     }
 
     /** Скачивание сертификата в PEM, как {@code /?d=<id>} у crt.sh. */

@@ -141,11 +141,14 @@ class CertificateRepositoryTest {
     void excludeExpiredFiltersOutOldCerts() throws Exception {
         CertificateRepository.NewCert original = fixtureCerts().get(0);
         String domain = original.domains().iterator().next();
+        // второй, истёкший сертификат на том же домене: срок задан вручную, sha256 делаем
+        // другим (в реальности один DER не может иметь разные сроки — иначе дедупликация
+        // по sha256 схлопнула бы строки)
         CertificateRepository.NewCert expired = new CertificateRepository.NewCert(
                 original.logUrl(),
                 999, // уникальный log_index
                 original.der(),
-                original.sha256(),
+                "ee" + original.sha256().substring(2),
                 original.serial(),
                 original.subjectDn(),
                 original.issuerDn(),
@@ -167,10 +170,13 @@ class CertificateRepositoryTest {
         repository.insertCertificates(rows);
         String domain = rows.get(0).domains().iterator().next();
 
-        List<SearchRow> found = repository.search(domain, false);
+        List<Long> ids = repository.searchIds(domain, false, 1, true);
+        org.junit.jupiter.api.Assertions.assertFalse(ids.isEmpty());
+        assertNotNull(cacheManager.getCache("search").get(domain + "::1:true"),
+                "список id поиска должен попасть в кеш search");
+
+        List<SearchRow> found = repository.searchRows(ids, ids.size());
         org.junit.jupiter.api.Assertions.assertFalse(found.isEmpty());
-        assertNotNull(cacheManager.getCache("search").get(domain + ":"),
-                "результат поиска должен попасть в кеш search");
 
         CertDetails details = repository.getCertDetails(found.get(0).id());
         assertNotNull(details);
@@ -178,6 +184,52 @@ class CertificateRepositoryTest {
                 "детали сертификата должны попасть в кеш certById");
         assertNull(cacheManager.getCache("certById").get(-1L),
                 "null-результат не кешируется");
+    }
+
+    @Test
+    void searchRowsPageKeepsTotalInResultCount() throws Exception {
+        List<CertificateRepository.NewCert> rows = fixtureCerts();
+        repository.insertCertificates(rows);
+        String domain = rows.get(0).domains().iterator().next();
+
+        List<Long> ids = repository.searchIds(domain, false, 1, true);
+        assertTrue(ids.size() >= 1);
+        List<SearchRow> page = repository.searchRows(ids.subList(0, 1), ids.size());
+        assertEquals(1, page.size(), "страница — только переданные id");
+        assertEquals(ids.size(), page.get(0).result_count(),
+                "result_count — общее число совпадений, а не размер страницы");
+    }
+
+    @Test
+    void sameCertificateFoundInMultipleLogs() throws Exception {
+        CertificateRepository.NewCert original = fixtureCerts().get(0);
+        // тот же DER/sha256, но другой лог и записан на час раньше — как повторная подача
+        // в другой CT-лог; домены в реальности берутся из DER, поэтому у копий совпадают
+        CertificateRepository.NewCert inOtherLog = new CertificateRepository.NewCert(
+                "https://other.example/log/",
+                42,
+                original.der(),
+                original.sha256(),
+                original.serial(),
+                original.subjectDn(),
+                original.issuerDn(),
+                original.notBefore(),
+                original.notAfter(),
+                original.entryTs().minusHours(1),
+                original.precert(),
+                original.domains());
+        repository.insertCertificates(List.of(original, inOtherLog));
+
+        List<SearchRow> found = repository.search(original.domains().iterator().next(), false);
+        assertEquals(1, found.size(), "дубликат в нескольких логах — одна строка поиска, как у crt.sh");
+
+        CertDetails details = repository.getCertDetails(found.get(0).id());
+        assertEquals("https://other.example/log/", details.log_url(),
+                "показывается самое раннее попадание в лог");
+        assertEquals(2, details.occurrences().size(),
+                "сертификат должен показывать вхождения из обоих логов");
+        assertTrue(details.occurrences().stream()
+                .anyMatch(o -> "https://other.example/log/".equals(o.log_url())));
     }
 
     @Test

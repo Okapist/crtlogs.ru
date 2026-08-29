@@ -9,7 +9,8 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Два кеша с разной политикой: сертификаты иммутабельны (certById — долго),
- * результаты поиска устаревают по мере синка (search — 60 c).
+ * списки id поиска устаревают по мере синка (search — 5 мин: синк раз в 10 мин,
+ * а пейджинг по большой выборке не должен пересчитывать её на каждом листании).
  */
 @Configuration
 public class CacheConfig {
@@ -23,7 +24,7 @@ public class CacheConfig {
                 .build());
         manager.registerCustomCache("search", Caffeine.newBuilder()
                 .maximumSize(500)
-                .expireAfterWrite(Duration.ofSeconds(60))
+                .expireAfterWrite(Duration.ofMinutes(5))
                 .build());
         return manager;
     }

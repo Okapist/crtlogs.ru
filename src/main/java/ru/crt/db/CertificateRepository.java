@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.crt.client.KnownLog;
 import ru.crt.sync.CtEntryParser;
 import ru.crt.web.CertDetails;
+import ru.crt.web.CertTextDump;
 import ru.crt.web.LogStatus;
 import ru.crt.web.SearchRow;
 
@@ -201,27 +202,66 @@ public class CertificateRepository {
 
     /**
      * Поиск в семантике crt.sh: точное совпадение identity, поддомены через wildcard
-     * (символы % и _ пользователя передаются в LIKE как есть).
+     * (символы % и _ пользователя передаются в LIKE как есть). Для тестов — целиком,
+     * без кеша и пейджинга; рабочий путь идёт через searchIds + searchRows.
+     */
+    public List<SearchRow> search(String q, boolean excludeExpired) {
+        List<Long> ids = searchIds(q, excludeExpired, SORT_LOGGED_AT, true);
+        return searchRows(ids, ids.size());
+    }
+
+    /**
+     * Id уникальных сертификатов в порядке сортировки sort/dir, как у crt.sh:
+     * 0 = ID, 1 = Logged At, 2 = Not Before, 3 = Issuer Name, 4 = Not After.
+     * Дубли (тот же sha256 в разных логах) сворачиваются в SQL — одна строка на
+     * сертификат, самое раннее попадание в любой лог. Без DER: список лёгкий и
+     * кешируется, страница результатов берёт из него только нужную сотню (searchRows).
      */
     @Cacheable(cacheNames = "search",
-            key = "#p0 + ':' + (#p1 ? 'expired' : '')",
+            key = "#p0 + ':' + (#p1 ? 'expired' : '') + ':' + #p2 + ':' + #p3",
             unless = "#result.isEmpty()")
-    public List<SearchRow> search(String q, boolean excludeExpired) {
+    public List<Long> searchIds(String q, boolean excludeExpired, int sort, boolean descending) {
         String norm = q.toLowerCase(Locale.ROOT);
         boolean wildcard = norm.indexOf('%') >= 0 || norm.indexOf('_') >= 0;
+        String match = wildcard ? "d.domain LIKE ?" : "d.domain = ?";
         String expiry = excludeExpired ? " AND c.not_after >= CURRENT_TIMESTAMP" : "";
-        String matchSql = wildcard
-                ? "SELECT DISTINCT c.id FROM certificate c JOIN cert_domain d ON d.cert_id = c.id"
-                        + " WHERE d.domain LIKE ?" + expiry + " ORDER BY c.id"
-                : "SELECT DISTINCT c.id FROM certificate c JOIN cert_domain d ON d.cert_id = c.id"
-                        + " WHERE d.domain = ?" + expiry + " ORDER BY c.id";
-        List<Long> ids = jdbc.query(matchSql, (rs, i) -> rs.getLong(1), norm);
+        String sortExpr = switch (sort) {
+            case 0 -> "t.id";
+            case 2 -> "t.not_before";
+            case 3 -> "LOWER(t.issuer_name)";
+            case 4 -> "t.not_after";
+            default -> "t.entry_ts";
+        };
+        String dir = descending ? "DESC" : "ASC";
+        return jdbc.query("""
+                SELECT t.id FROM (
+                  SELECT c.id AS id, c.entry_ts AS entry_ts, c.not_before AS not_before,
+                         c.not_after AS not_after, ca.name AS issuer_name,
+                         ROW_NUMBER() OVER (PARTITION BY c.sha256
+                             ORDER BY c.entry_ts NULLS LAST, c.id) AS rn
+                  FROM certificate c
+                  JOIN cert_domain d ON d.cert_id = c.id
+                  LEFT JOIN ca ON ca.id = c.issuer_ca_id
+                  WHERE %s%s
+                ) t
+                WHERE t.rn = 1
+                ORDER BY %s %s, t.id %s
+                """.formatted(match, expiry, sortExpr, dir, dir),
+                (rs, i) -> rs.getLong(1), norm);
+    }
+
+    /**
+     * Строки поиска по переданным id (обычно страница из searchIds, порядок
+     * сохраняется). total — общее число совпадений: кладётся в result_count
+     * каждой строки, чтобы клиенты могли построить пейджер.
+     */
+    public List<SearchRow> searchRows(List<Long> ids, int total) {
         if (ids.isEmpty()) {
             return List.of();
         }
-        Map<Long, CertRow> rows = loadCertRows(ids);
+        Map<Long, CertRow> rows = loadCertRows(ids, false);
         Map<Long, TreeSet<String>> domains = loadDomains(ids);
-        List<SearchRow> out = new ArrayList<>(rows.size());
+        List<SearchRow> out = new ArrayList<>(ids.size());
         for (Long id : ids) {
             CertRow r = rows.get(id);
             if (r == null) {
@@ -238,15 +278,18 @@ public class CertificateRepository {
                     format(r.notBefore()),
                     format(r.notAfter()),
                     r.serial(),
-                    ids.size()));
+                    total));
         }
         return out;
     }
 
+    /** Индексы сортировки как у crt.sh: 0 = ID, 1 = Logged At, 2 = Not Before, 3 = Issuer, 4 = Not After. */
+    static final int SORT_LOGGED_AT = 1;
+
     /** Детали сертификата для UI и скачивания; null, если не существует. */
     @Cacheable(cacheNames = "certById", key = "#p0", unless = "#result == null")
     public CertDetails getCertDetails(long id) {
-        List<CertRow> rows = new ArrayList<>(loadCertRows(List.of(id)).values());
+        List<CertRow> rows = new ArrayList<>(loadCertRows(List.of(id), true).values());
         if (rows.isEmpty()) {
             return null;
         }
@@ -262,6 +305,7 @@ public class CertificateRepository {
                 r.logUrl(),
                 r.logIndex(),
                 r.sha256(),
+                CertTextDump.sha1Hex(r.der()),
                 r.serial(),
                 r.subjectDn(),
                 r.issuerDn(),
@@ -269,7 +313,26 @@ public class CertificateRepository {
                 format(r.notAfter()),
                 format(r.entryTs()),
                 r.precert(),
+                loadOccurrences(r.sha256()),
+                CertTextDump.render(r.der()),
                 toPem(r.der()));
+    }
+
+    /** Вхождения этого же сертификата (тот же sha256) во все синхронизированные логи. */
+    private List<CertDetails.LogOccurrence> loadOccurrences(String sha256) {
+        return jdbc.query("""
+                        SELECT c.log_url, l.description, l.operator, c.log_index, c.entry_ts
+                        FROM certificate c LEFT JOIN ct_log l ON l.url = c.log_url
+                        WHERE c.sha256 = ?
+                        ORDER BY c.entry_ts, c.log_url
+                        """,
+                (rs, i) -> new CertDetails.LogOccurrence(
+                        rs.getString(1),
+                        rs.getString(2),
+                        rs.getString(3),
+                        rs.getLong(4),
+                        format(rs.getTimestamp(5))),
+                sha256);
     }
 
     private record CertRow(
@@ -288,14 +351,18 @@ public class CertificateRepository {
             byte[] der) {
     }
 
-    private Map<Long, CertRow> loadCertRows(List<Long> ids) {
+    /**
+     * Строки certificate по id. withDer=false — без BLOB'ов DER (поиску они не нужны,
+     * а на полном wildcard это десятки мегабайт); der в CertRow тогда null.
+     */
+    private Map<Long, CertRow> loadCertRows(List<Long> ids, boolean withDer) {
         Map<Long, CertRow> out = new LinkedHashMap<>();
         for (List<Long> chunk : partition(ids, 1000)) {
             String placeholders = String.join(",", chunk.stream().map(v -> "?").toList());
             Object[] args = chunk.toArray();
             jdbc.query("SELECT c.id, c.issuer_ca_id, ca.name, c.log_url, c.log_index, c.sha256,"
                             + " c.serial, c.subject_dn, c.issuer_dn, c.not_before, c.not_after,"
-                            + " c.entry_ts, c.is_precert, c.der"
+                            + " c.entry_ts, c.is_precert" + (withDer ? ", c.der" : "")
                             + " FROM certificate c LEFT JOIN ca ON ca.id = c.issuer_ca_id"
                             + " WHERE c.id IN (" + placeholders + ")",
                     (rs, i) -> {
@@ -315,7 +382,7 @@ public class CertificateRepository {
                                 notAfter == null ? null : notAfter.toLocalDateTime(),
                                 entryTs == null ? null : entryTs.toLocalDateTime(),
                                 rs.getBoolean("is_precert"),
-                                rs.getBytes("der")));
+                                withDer ? rs.getBytes("der") : null));
                         return null;
                     }, args);
         }
