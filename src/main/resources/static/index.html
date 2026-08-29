@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>crtlogs.ru | Certificate Search</title>
+<style>
+  body { font-family: Georgia, "Times New Roman", serif; background: #fff; color: #000; margin: 0; }
+  a { color: #1a0dab; }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px 24px; }
+
+  /* --- домашнее состояние: крупный логотип по центру --- */
+  #hero { text-align: center; margin-top: 90px; }
+  #hero .logo { font-size: 52px; font-weight: bold; }
+  #hero .logo a { color: #1a0dab; text-decoration: none; }
+  #hero .sub { color: #444; font-size: 17px; margin-top: 2px; }
+
+  #searchForm { text-align: center; margin: 34px 0 10px; }
+  #searchForm input[type=text] { width: 440px; max-width: 70vw; padding: 6px 8px; font-size: 16px;
+        font-family: inherit; border: 1px solid #767676; }
+  #searchForm input[type=submit] { padding: 6px 18px; font-size: 15px; font-family: inherit; }
+  #searchForm label { color: #555; font-size: 13px; white-space: nowrap; }
+
+  #hint { text-align: center; color: #666; font-size: 13px; line-height: 1.6; }
+  #hint code { background: #f2f2f2; padding: 0 3px; }
+
+  /* --- состояние результатов: компактная шапка как у crt.sh --- */
+  body.state-results #hero { text-align: left; margin-top: 0; }
+  body.state-results #hero .logo { font-size: 22px; }
+  body.state-results #hero .logo a { font-weight: bold; }
+  body.state-results #hero .sub { font-size: 13px; color: #666; margin-left: 10px; }
+  body.state-results #searchForm { text-align: left; margin: 12px 0 4px; }
+  body.state-results #searchForm input[type=text] { width: 440px; max-width: 60vw; font-size: 14px; }
+  body.state-results #hint { display: none; }
+
+  .info { color: #444; font-size: 13px; margin: 6px 0; }
+  table.results { border-collapse: collapse; margin-top: 6px; width: 100%; }
+  table.results th, table.results td { border: 1px solid #999; padding: 3px 7px;
+        text-align: left; vertical-align: top; font-size: 13px; }
+  table.results th { background: #eee; font-weight: bold; white-space: nowrap; }
+  table.results td.ident { font-size: 12px; }
+  .msg { padding: 6px 10px; border: 1px solid #bbb; background: #f4f4f4; color: #333;
+        font-size: 13px; margin: 10px 0; }
+
+  /* --- статус логов: компактный блок под кнопкой поиска, без токена --- */
+  #logs { margin-top: 28px; text-align: center; }
+  body.state-results #logs { margin-top: 14px; text-align: left; }
+  #logs .status { color: #999; font-size: 12px; margin-bottom: 3px; }
+  #logs table { border-collapse: collapse; margin: 0 auto; }
+  body.state-results #logs table { margin: 0; }
+  #logs th, #logs td { border: 1px solid #bbb; padding: 2px 7px; text-align: left;
+        vertical-align: top; font-size: 12px; }
+  #logs th { background: #f2f2f2; white-space: nowrap; }
+  .ok { color: #060; font-weight: bold; }
+  .err { color: #900; font-weight: bold; }
+  .muted { color: #777; font-size: 11px; }
+  .bar { width: 90px; height: 6px; background: #e3e3e3; display: inline-block; vertical-align: middle; }
+  .bar i { display: block; height: 100%; background: #1a0dab; }
+</style>
+</head>
+<body class="state-home">
+<div class="wrap">
+
+  <div id="hero">
+    <div class="logo"><a href="/">crtlogs.ru</a></div>
+    <div class="sub">Certificate Search &middot; российские CT-логи (Yandex, VK, Минцифры)</div>
+  </div>
+
+  <form id="searchForm" action="/" method="get">
+    <input type="text" name="q" id="q" autofocus autocomplete="off" placeholder="домен, например example.ru">
+    <label><input type="checkbox" id="excludeExpired"> только действующие</label>
+    <input type="submit" value="Search">
+  </form>
+
+  <div id="logs">
+    <div class="status" id="logsStatus">загрузка статуса…</div>
+    <div id="logsTable"></div>
+  </div>
+
+  <div id="hint">
+    Точное совпадение; поддомены — wildcard: <code>%.</code>например <code>%.example.ru</code><br>
+    JSON-выдача как у crt.sh: <code>/?q=example.ru&amp;output=json</code>
+  </div>
+
+  <div id="message"></div>
+  <div id="results"></div>
+</div>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// --- поиск: результаты на этой же странице, без перехода ---
+
+$('searchForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  runSearch(true);
+});
+
+async function runSearch(pushState) {
+  const q = $('q').value.trim();
+  if (!q) { showMessage('Пустой запрос'); return; }
+  const exclude = $('excludeExpired').checked;
+  const pageUrl = '/?q=' + encodeURIComponent(q) + (exclude ? '&exclude=expired' : '');
+  if (pushState) history.pushState(null, '', pageUrl);
+  document.body.classList.remove('state-home');
+  document.body.classList.add('state-results');
+  showMessage('');
+  $('results').innerHTML = '<p class="info">Поиск…</p>';
+  try {
+    const resp = await fetch(pageUrl + '&output=json');
+    if (resp.status === 429) {
+      $('results').innerHTML = '';
+      showMessage('Слишком много запросов (лимит 1 запрос/сек) — подождите секунду и повторите.');
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    renderResults(q, await resp.json(), exclude);
+  } catch (err) {
+    $('results').innerHTML = '';
+    showMessage('Ошибка поиска: ' + err.message);
+  }
+}
+
+function renderResults(q, rows, exclude) {
+  if (!rows.length) {
+    $('results').innerHTML = '';
+    showMessage('По запросу «' + q + '» ничего не найдено.');
+    return;
+  }
+  const body = rows.map((r) => `
+    <tr>
+      <td><a href="/?id=${r.id}" target="_blank" rel="noopener">${r.id}</a></td>
+      <td>${esc(r.entry_timestamp)}</td>
+      <td>${esc(r.not_before)}</td>
+      <td>${esc(r.not_after)}</td>
+      <td>${esc(r.common_name)}</td>
+      <td class="ident">${esc(r.name_value).replace(/\n/g, '<br>')}</td>
+      <td>${esc(r.issuer_name)}</td>
+    </tr>`).join('');
+  $('results').innerHTML = `
+    <p class="info">Запрос: <b>${esc(q)}</b> &middot; найдено: <b>${rows.length}</b>
+      ${exclude ? '&middot; только действующие' : ''}</p>
+    <table class="results">
+      <tr><th>crtlogs.ru ID</th><th>Logged At</th><th>Not Before</th><th>Not After</th>
+      <th>Common Name</th><th>Matching Identifiers</th><th>Issuer Name</th></tr>
+      ${body}
+    </table>`;
+}
+
+function showMessage(text) {
+  $('message').innerHTML = text ? `<div class="msg">${esc(text)}</div>` : '';
+}
+
+// прямая ссылка вида /?q=... — показываем результаты сразу, но оставаемся на этой же странице
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(location.search);
+  if (params.get('q')) {
+    $('q').value = params.get('q');
+    $('excludeExpired').checked = params.get('exclude') === 'expired';
+    runSearch(false);
+  }
+});
+
+// --- статус логов (под токеном) ---
+
+let logsTimer = null;
+
+// --- статус логов: публичный /api/status, обновление раз в 30 с, без токена ---
+// Полные детали (тексты ошибок) — /api/logs под Bearer-токеном, пригодится на отдельной странице.
+
+let logsTimer = null;
+
+async function refreshLogs() {
+  try {
+    const resp = await fetch('/api/status');
+    if (resp.status === 429) { $('logsStatus').textContent = 'лимит запросов, повторим позже'; return; }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    renderLogs(await resp.json());
+    scheduleLogsTimer();
+  } catch (err) {
+    $('logsStatus').textContent = 'статус недоступен: ' + err.message;
+  }
+}
+
+function renderLogs(logs) {
+  const rows = logs.map((l) => {
+    const pct = l.tree_size ? Math.min(100, Math.round(100 * l.last_synced_index / l.tree_size)) : 0;
+    const state = !l.ok ? '<span class="err">ошибка</span>'
+      : (l.last_synced_index >= l.tree_size ? '<span class="ok">ок</span>' : 'синк…');
+    return `<tr>
+      <td>${esc(l.description)}<div class="muted">${esc(l.url)}</div></td>
+      <td>${l.last_synced_index} / ${l.tree_size} <span class="bar"><i style="width:${pct}%"></i></span></td>
+      <td>${state}</td>
+      <td class="muted">${esc(l.updated_at || '')}</td>
+    </tr>`;
+  }).join('');
+  $('logsTable').innerHTML =
+    `<table><tr><th>Лог</th><th>Записей</th><th>Состояние</th><th>Обновлён</th></tr>${rows}</table>`;
+  $('logsStatus').textContent = 'Статус CT-логов · обновлено ' + new Date().toLocaleTimeString();
+}
+
+function scheduleLogsTimer() {
+  stopLogsTimer();
+  logsTimer = setInterval(refreshLogs, 30000);
+}
+
+function stopLogsTimer() {
+  if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
+}
+
+refreshLogs();
+</script>
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){
+        m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    })(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id=112064937', 'ym');
+
+    ym(112064937, 'init', {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/112064937" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+</body>
+</html>

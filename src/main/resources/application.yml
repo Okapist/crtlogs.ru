@@ -1,0 +1,27 @@
+server:
+  # 8080 на этой машине занят встроенным сервером IntelliJ IDEA; меняется через SERVER_PORT
+  port: 8090
+
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/ctlog;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+  sql:
+    init:
+      mode: always # schema.sql на каждом старте (там IF NOT EXISTS)
+
+ct:
+  log-list-url: https://browser-resources.s3.yandex.net/ctlog/ctlog.json
+  sync-interval: PT10M
+  batch-size: 256
+  # дополнительные доверенные сертификаты УЦ Минцифры для HTTPS CT-логов (через запятую);
+  # серверы Минцифры не присылают промежуточный сертификат, поэтому нужен и Sub CA.
+  # JDK не модифицируется.
+  trust-cert: ${CT_TRUST_CERT:./data/russian_trusted_root_ca.cer,./data/russian_trusted_sub_ca_2024.crt}
+  rate-limit:
+    enabled: true
+    rps: 1
+    burst: 3
+    trust-forwarded: false
+  auth:
+    token: ${CT_AUTH_TOKEN:} # пусто => /api/logs всегда 401
