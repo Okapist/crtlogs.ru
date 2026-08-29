@@ -87,6 +87,25 @@ class RateLimitFilterTest {
         assertNull(chain.getRequest()); // до контроллера не дошло
     }
 
+    /**
+     * Caddy дописывает реальный IP в конец X-Forwarded-For, поэтому доверять можно
+     * только последнему элементу: первый прислал сам клиент и им можно управлять.
+     */
+    @Test
+    void forwardedForTakesTheHopAddedByOurProxy() {
+        props.getRateLimit().setTrustForwarded(true);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/status");
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Forwarded-For", "1.2.3.4, 203.0.113.7");
+        assertEquals("203.0.113.7", filter.clientIp(request));
+
+        MockHttpServletRequest untrusted = new MockHttpServletRequest("GET", "/api/status");
+        untrusted.setRemoteAddr("127.0.0.1");
+        untrusted.addHeader("X-Forwarded-For", "1.2.3.4");
+        props.getRateLimit().setTrustForwarded(false);
+        assertEquals("127.0.0.1", filter.clientIp(untrusted), "без trust-forwarded заголовок игнорируется");
+    }
+
     @Test
     void staticRootAndApiAreTreatedDifferently() {
         // "/" без параметров не лимитируется

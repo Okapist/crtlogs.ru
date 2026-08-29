@@ -1,23 +1,64 @@
 # systemd-юнит приложения. Установка:
 #   sudo cp deploy/crtlogs.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now crtlogs
-# Токен /api/logs задаётся здесь (сгенерируйте свой: openssl rand -hex 24);
-# пустой CT_AUTH_TOKEN = эндпоинт закрыт.
+# Проверить ограничения: systemd-analyze security crtlogs
 [Unit]
-Description=crtlogs.ru - CT log search
+Description=crtlogs.ru - поиск по российским CT-логам
+Documentation=https://github.com/Okapist/crtlogs.ru
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+Type=exec
 User=crtlogs
 Group=crtlogs
 WorkingDirectory=/opt/crtlogs
+SyslogIdentifier=crtlogs
+
+# Секреты (CT_AUTH_TOKEN) — в файле с правами 600, а не в Environment= юнита:
+# /etc/systemd/system/*.service читается всеми, и `systemctl cat crtlogs` показал бы
+# токен любому пользователю сервера. Ведущий '-' = файла может не быть
+# (тогда токен пуст и /api/logs просто закрыт).
+EnvironmentFile=-/etc/crtlogs/env
 Environment=SPRING_PROFILES_ACTIVE=prod
 Environment=SERVER_PORT=8090
-# Environment=CT_AUTH_TOKEN=<сильный токен>
-ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75 -jar /opt/crtlogs/crtlogs.jar
+
+# ExitOnOutOfMemoryError + Restart=always: после OOM процесс не остаётся полуживым,
+# а честно падает и перезапускается
+ExecStart=/usr/bin/java -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -jar /opt/crtlogs/crtlogs.jar
 Restart=always
 RestartSec=5
+KillSignal=SIGTERM
+# H2 должна успеть закрыть файл: недозакрытая база уходит в recovery на следующем старте
+TimeoutStopSec=60
+
+# --- ограничение прав ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+# единственное, что приложению нужно писать: файловая H2 и trust-сертификаты
+ReadWritePaths=/opt/crtlogs/data
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# порт 8090 > 1024, привилегии не нужны ни одной
+CapabilityBoundingSet=
+AmbientCapabilities=
+# MemoryDenyWriteExecute несовместим с JIT — оставляем выключенным осознанно
+MemoryDenyWriteExecute=false
 
 [Install]
 WantedBy=multi-user.target

@@ -58,11 +58,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
     }
 
-    private String clientIp(HttpServletRequest request) {
+    /**
+     * IP клиента. При trust-forwarded берём ПОСЛЕДНИЙ элемент X-Forwarded-For — тот,
+     * который дописал наш собственный прокси. Первый элемент присылает сам клиент:
+     * взяв его, лимит по IP обходится случайным значением заголовка. Предполагается
+     * ровно один доверенный прокси непосредственно перед приложением (см. deploy/Caddyfile).
+     */
+    String clientIp(HttpServletRequest request) {
         if (props.getRateLimit().isTrustForwarded()) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
-                return forwarded.split(",")[0].trim();
+                String[] hops = forwarded.split(",");
+                String last = hops[hops.length - 1].trim();
+                if (!last.isEmpty()) {
+                    return last;
+                }
             }
         }
         return request.getRemoteAddr();

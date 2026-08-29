@@ -32,6 +32,13 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
 }
 
+// Приложение раздаётся одним исполняемым bootJar. «Плоский» jar без зависимостей
+// запустить нельзя, а в build/libs он создаёт второй файл — деплой потом гадает,
+// какой из двух брать.
+tasks.jar {
+    enabled = false
+}
+
 tasks.bootRun {
     // Токен для /api/logs при локальном запуске (кнопка в IDEA / gradlew bootRun).
     // Внешняя переменная CT_AUTH_TOKEN имеет приоритет; в собранном jar работает

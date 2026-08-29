@@ -1,7 +1,6 @@
 # crtlogs.ru
 
 [![CI](https://github.com/Okapist/crtlogs.ru/actions/workflows/ci.yml/badge.svg)](https://github.com/Okapist/crtlogs.ru/actions/workflows/ci.yml)
-[![Deploy](https://github.com/Okapist/crtlogs.ru/actions/workflows/deploy.yml/badge.svg)](https://github.com/Okapist/crtlogs.ru/actions/workflows/deploy.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.16-6DB33F)
 ![Gradle](https://img.shields.io/badge/Gradle-9.7.1-02303A?logo=gradle&logoColor=white)
@@ -81,18 +80,21 @@ curl -H 'Authorization: Bearer <токен>' 'http://localhost:8090/api/logs'
 
 ## Разворачивание
 
-Прод-схема: **GitHub Actions** (тесты + bootJar) → **SCP на сервер** →
+Прод-схема: **GitHub Actions** (тесты + bootJar) → **SSH на сервер** →
 **systemd-сервис** (127.0.0.1:8090), снаружи — **Caddy** с автоматическим
 HTTPS от Let's Encrypt. Полный runbook — в [DEPLOY.md](DEPLOY.md), конфиги —
 в [deploy/](deploy/) и [.github/workflows/](.github/workflows/):
 
-- `deploy/crtlogs.service` — systemd-юнит;
-- `deploy/Caddyfile` — reverse-proxy с TLS;
-- `.github/workflows/ci.yml`, `deploy.yml` — CI и автодеплой по SSH
-  (секреты `SSH_HOST`/`SSH_USER`/`SSH_KEY`);
-- `application-prod.yml` — прод-профиль: слушать только localhost и брать
+- `.github/workflows/ci.yml` — тесты, сборка и деплой одним прогоном: артефакт
+  собирается один раз и он же уезжает на сервер;
+- `deploy/crtlogs-deploy` — привилегированный скрипт установки на сервере:
+  ставит jar, ждёт, пока сервис ответит, и откатывается, если не дождался
+  (CI разрешена ровно эта команда через `sudo`, а не `sudo` вообще);
+- `deploy/crtlogs.service` — systemd-юнит с ограничением прав, токен `/api/logs`
+  подключается из `/etc/crtlogs/env`, а не лежит в самом юните;
+- `deploy/Caddyfile` — reverse-proxy с TLS и перезаписью `X-Forwarded-For`;
+- `application-prod.yml` — прод-профиль: слушать только localhost, graceful shutdown,
   реальный IP клиента из `X-Forwarded-For` (за прокси).
 
-Быстрый ручной вариант: `./gradlew bootJar`, скопировать
-`build/libs/crtlogs.ru-*.jar` на сервер в `/opt/crtlogs/crtlogs.jar`, поставить
-юнит и Caddyfile по DEPLOY.md, `systemctl enable --now crtlogs`.
+Быстрый ручной вариант: `./gradlew bootJar`, поставить юнит и Caddyfile по DEPLOY.md,
+затем `ssh user@server 'sudo /usr/local/sbin/crtlogs-deploy' < build/libs/crtlogs.ru-*.jar`.

@@ -1,19 +1,105 @@
-# CI: тесты на каждый push/PR. Сборка деплой-артефакта — в deploy.yml.
+# Сборка, тесты и деплой одним прогоном: jar собирается один раз и он же уезжает на
+# сервер. Отдельный deploy-workflow пересобирал бы его заново — то есть на прод мог бы
+# уехать артефакт, который никто не тестировал.
 name: ci
 
 on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch: # ручной запуск и откат: Actions -> ci -> Run workflow -> выбрать ветку/тег
+
+# Задание только читает код; доступ к серверу идёт через секреты, а не через GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # PR-прогоны отменяем при новом пуше, прогоны master — нет: отмена на середине
+  # оставила бы сервер с наполовину выполненным деплоем
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: '21'
+
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew --no-daemon test
+        with:
+          validate-wrappers: true # сверяет контрольную сумму gradle-wrapper.jar
+
+      - name: Сборка и тесты
+        run: ./gradlew build
+
+      - name: Отчёты упавших тестов
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: build/reports/tests/test
+          retention-days: 7
+
+      - name: Артефакт для деплоя
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    needs: build
+    # Автодеплой push в master включается переменной репозитория DEPLOY_ENABLED=true
+    # (Settings -> Secrets and variables -> Actions -> Variables). Ручной запуск
+    # работает всегда и с любой ветки/тега — это же и механизм отката.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    environment: production # история деплоев и место для правил защиты
+    concurrency:
+      # два деплоя одновременно подрались бы за jar и за рестарт сервиса
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      # код здесь не нужен: на сервер уезжает только jar, а привилегированный скрипт
+      # установки уже лежит на сервере (см. DEPLOY.md, п. 1.5)
+      - uses: actions/download-artifact@v4
+        with:
+          name: jar
+          path: dist
+
+      - name: Ключ и known_hosts
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # без known_hosts ssh либо откажется соединяться, либо (с -o StrictHostKeyChecking=no)
+          # молча примет любой хост — то есть приватный ключ уедет первому, кто перехватит DNS
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Установка на сервер
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ vars.SSH_PORT || 22 }}
+        run: |
+          set -euo pipefail
+          jar=$(ls dist/*.jar)
+          echo "деплою $jar"
+          # jar идёт прямо в stdin привилегированного скрипта: на сервере не остаётся
+          # промежуточного файла, который можно подменить символьной ссылкой.
+          # Скрипт сам перезапускает сервис, ждёт ответа и откатывается, если не поднялся.
+          ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy -o BatchMode=yes \
+              "$SSH_USER@$SSH_HOST" 'sudo /usr/local/sbin/crtlogs-deploy' < "$jar"

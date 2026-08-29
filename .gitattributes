@@ -1,6 +1,8 @@
 # Файлы деплоя попадают на Linux-сервер как есть — только LF,
-# иначе autocrlf на Windows может отдать их с CRLF.
+# иначе autocrlf на Windows может отдать их с CRLF: bash споткнётся на \r
+# в шебанге, а systemd — в значениях директив.
 deploy/** text eol=lf
 .github/** text eol=lf
 DEPLOY.md text eol=lf
 gradlew text eol=lf
+*.sh text eol=lf

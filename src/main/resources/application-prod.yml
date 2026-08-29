@@ -3,9 +3,17 @@
 server:
   # слушать только локальный интерфейс — наружу приложение отдаёт reverse-proxy (Caddy)
   address: 127.0.0.1
+  # дать текущим запросам доиграть при systemctl restart, а не рвать их по SIGTERM
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
 
 ct:
   rate-limit:
     # за reverse-proxy все запросы приходят с 127.0.0.1 — реальный IP клиента
-    # берём из X-Forwarded-For (иначе лимит 1 rps станет общим на всех посетителей)
+    # берём из X-Forwarded-For (иначе лимит 1 rps станет общим на всех посетителей).
+    # Работает, только если прокси перезаписывает заголовок, а не дополняет
+    # присланный клиентом: см. header_up в deploy/Caddyfile.
     trust-forwarded: true

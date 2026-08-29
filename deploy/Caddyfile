@@ -1,7 +1,34 @@
 # Caddy: HTTPS от Let's Encrypt получается и продлевается автоматически
-# (нужны DNS A-запись crtlogs.ru -> IP сервера и открытые порты 80/443).
+# (нужны DNS A-записи crtlogs.ru и www.crtlogs.ru -> IP сервера, открытые порты 80/443).
 # Установка: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+# www отдаём редиректом, а не вторым живым сайтом: одна каноническая версия страницы
+# для поисковиков и один набор кук/лимитов вместо двух.
+www.crtlogs.ru {
+	redir https://crtlogs.ru{uri} permanent
+}
+
 crtlogs.ru {
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:8090
+
+	reverse_proxy 127.0.0.1:8090 {
+		# X-Forwarded-For именно перезаписываем. По умолчанию Caddy дописывает реальный
+		# IP к присланному клиентом, то есть заголовок "X-Forwarded-For: 1.2.3.4"
+		# от посетителя доехал бы до приложения первым элементом — и лимит 1 rps
+		# обходился бы случайным значением этого заголовка.
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/crtlogs.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
 }
