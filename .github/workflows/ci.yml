@@ -70,7 +70,7 @@ jobs:
     steps:
       # код здесь не нужен: на сервер уезжает только jar, а привилегированный скрипт
       # установки уже лежит на сервере (см. DEPLOY.md, п. 1.5)
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: jar
           path: dist
