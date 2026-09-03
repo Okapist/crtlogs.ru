@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+#
+# Установка нового jar на сервере. Вызывается из CI одной командой:
+#   ssh <сервер> 'sudo /usr/local/sbin/crtlogs-deploy testing'    < build/libs/*.jar
+#   ssh <сервер> 'sudo /usr/local/sbin/crtlogs-deploy production' < build/libs/*.jar
+#
+# jar приходит со stdin, а не заливается заранее: на диске деплой-пользователя ничего
+# не остаётся, и подменить путь символьной ссылкой на чужой файл нельзя.
+#
+# Окружение — обязательный аргумент, а не переменная среды: именно он попадает в
+# правило sudoers, поэтому право «раскатывать стенд» и право «раскатывать прод»
+# выдаются раздельно. Ключ, которым CI ходит за стендом, продакшен тронуть не может.
+#
+# Установка (однократно, от root):
+#   sudo install -o root -g root -m 755 deploy/crtlogs-deploy /usr/local/sbin/crtlogs-deploy
+#   printf '%s\n%s\n' \
+#     'deploy-testing ALL=(root) NOPASSWD: /usr/local/sbin/crtlogs-deploy testing' \
+#     'deploy-prod    ALL=(root) NOPASSWD: /usr/local/sbin/crtlogs-deploy production' \
+#     | sudo tee /etc/sudoers.d/crtlogs-deploy
+#   sudo chmod 440 /etc/sudoers.d/crtlogs-deploy && sudo visudo -c
+#
+set -euo pipefail
+
+# Префикс для прогона скрипта на стенде разработчика. Через sudo его не подставить:
+# env_reset (умолчание sudoers) вычищает окружение вызывающего, так что в боевом
+# вызове он всегда пуст.
+ROOT=${CRTLOGS_TEST_ROOT:-}
+
+case "${1:-}" in
+    production)
+        APP_DIR=$ROOT/opt/crtlogs
+        APP_USER=crtlogs
+        SERVICE=crtlogs
+        HEALTH=http://127.0.0.1:8090/api/status
+        ;;
+    testing)
+        APP_DIR=$ROOT/testing/opt/crtlogs
+        APP_USER=crtlogs-testing
+        SERVICE=crtlogs-testing
+        HEALTH=http://127.0.0.1:8091/testing/api/status
+        ;;
+    *)
+        echo "использование: crtlogs-deploy production|testing  (jar со stdin)" >&2
+        exit 2
+        ;;
+esac
+
+ATTEMPTS=30
+DELAY=2
+
+TARGET="$APP_DIR/crtlogs.jar"
+PREVIOUS="$APP_DIR/crtlogs.jar.prev"
+
+staged=$(mktemp "$APP_DIR/.crtlogs.jar.XXXXXX")
+trap 'rm -f "$staged"' EXIT
+cat > "$staged"
+
+# приехавшее должно быть непустым zip-архивом, а не нулём байт и не текстом ошибки
+if [ ! -s "$staged" ] || [ "$(head -c 2 "$staged")" != "PK" ]; then
+    echo "деплой отменён: со stdin пришёл не jar" >&2
+    exit 1
+fi
+
+if [ -f "$TARGET" ]; then
+    cp -p "$TARGET" "$PREVIOUS" # версия, на которую откатимся, если новая не поднимется
+fi
+
+chown "$APP_USER:$APP_USER" "$staged"
+chmod 644 "$staged"
+mv -f "$staged" "$TARGET" # тот же раздел, значит подмена атомарная
+trap - EXIT
+
+# Ждём, пока сервис реально начнёт отвечать. Фиксированный sleep врёт в обе стороны:
+# на медленном старте объявит успех рано, на быстром — заставит ждать зря.
+restart_and_wait() {
+    systemctl restart "$SERVICE"
+    for _ in $(seq 1 "$ATTEMPTS"); do
+        if curl -fsS -m 3 -o /dev/null "$HEALTH"; then
+            return 0
+        fi
+        sleep "$DELAY"
+    done
+    return 1
+}
+
+if restart_and_wait; then
+    echo "деплой ок: $SERVICE отвечает на $HEALTH"
+    exit 0
+fi
+
+echo "$SERVICE не поднялся за $((ATTEMPTS * DELAY)) с — откат" >&2
+journalctl -u "$SERVICE" -n 50 --no-pager >&2 || true
+
+if [ ! -f "$PREVIOUS" ]; then
+    echo "предыдущей версии нет, откатывать не на что" >&2
+    exit 1
+fi
+
+cp -p "$PREVIOUS" "$TARGET"
+if restart_and_wait; then
+    echo "откат выполнен, работает предыдущая версия" >&2
+else
+    echo "откат не помог, сервис не отвечает" >&2
+fi
+exit 1

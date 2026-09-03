@@ -1,0 +1,57 @@
+# Раскатка ПРОДА. Единственный триггер — workflow_dispatch: ни push, ни merge,
+# ни успешный прогон ci сюда не ведут. Прод обновляется только тем, что человек
+# осознанно нажал Run workflow и выбрал ветку или тег.
+#
+# Здесь же и откат: запустите workflow, выбрав старый тег или коммит.
+name: deploy-production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # два деплоя одновременно подрались бы за jar и за рестарт сервиса
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      # Место для правил защиты: добавьте сюда Required reviewers, и раскатка прода
+      # будет ждать подтверждения даже после нажатия Run workflow.
+      # Секреты SSH_USER/SSH_KEY тоже стоит держать в этом окружении, а не в
+      # репозитории: тогда ключ прода недоступен ни одному другому заданию.
+      name: production
+      url: https://crtlogs.ru/
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true
+
+      # Собираем и тестируем прямо здесь, а не берём артефакт из прогона ci:
+      # артефакт чужого прогона можно подменить, а выбранный тег пересобирается
+      # из исходников, которые видно в самом запуске.
+      - name: Сборка и тесты
+        run: ./gradlew build
+
+      - name: Артефакт под рукой у шага установки
+        run: mkdir -p dist && cp build/libs/*.jar dist/
+
+      - uses: ./.github/actions/ssh-deploy
+        with:
+          target: production
+          host: ${{ secrets.SSH_HOST }}
+          user: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          port: ${{ vars.SSH_PORT || 22 }}

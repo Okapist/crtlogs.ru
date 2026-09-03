@@ -1,0 +1,59 @@
+# Caddy: HTTPS от Let's Encrypt получается и продлевается автоматически
+# (нужны DNS A-записи crtlogs.ru и www.crtlogs.ru -> IP сервера, открытые порты 80/443).
+# Установка: sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# Перед первым reload: sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
+# — access-лог ниже пишется файлом, и без прав на него не загрузится весь конфиг.
+# Неудачный reload не роняет сервис, а оставляет работать прежний конфиг, поэтому
+# результат проверяем не «открывается ли сайт», а `sudo ss -lntp | grep :443`.
+
+# www отдаём редиректом, а не вторым живым сайтом: одна каноническая версия страницы
+# для поисковиков и один набор кук/лимитов вместо двух.
+www.crtlogs.ru {
+	redir https://crtlogs.ru{uri} permanent
+}
+
+crtlogs.ru {
+	encode zstd gzip
+
+	# Стенд: crtlogs.ru/testing/ -> отдельный сервис на 8091 со своей базой.
+	# Префикс НЕ срезаем: приложение знает о нём через SERVER_SERVLET_CONTEXT_PATH,
+	# поэтому само отдаёт редирект /testing -> /testing/ и корректные пути.
+	handle /testing/* {
+		header X-Robots-Tag "noindex, nofollow"
+		reverse_proxy 127.0.0.1:8091 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8090 {
+			# X-Forwarded-For перезаписываем целиком, а не дописываем: до приложения
+			# доезжает ровно один элемент — реальный адрес посетителя, и присланный
+			# им самим заголовок никуда не попадает. Приложение всё равно берёт
+			# последний элемент (почему — в javadoc RateLimitFilter.clientIp), так
+			# что оно защищено и без этой строки; строка убирает лишнее звено.
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Страницы собираются конкатенацией строк (ru.crt.web.HtmlView), и единственная
+		# защита от XSS там — не забыть esc() у каждой подстановки. CSP — второй рубеж:
+		# даже пропущенное экранирование не даст выполнить инлайновый скрипт, а
+		# frame-ancestors закрывает встраивание страницы сертификата в чужой фрейм.
+		# 'unsafe-inline' оставлен только стилям: инлайновые style-атрибуты в разметке
+		# есть, инлайновых <script> нет — счётчик и виджет подключаются файлами.
+		# mc.yandex.ru перечислен во всех директивах, которые нужны Метрике с вебвизором.
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://mc.yandex.ru; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://mc.yandex.ru; connect-src 'self' https://mc.yandex.ru; frame-src https://mc.yandex.ru; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/crtlogs.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
+}

@@ -1,0 +1,22 @@
+.gradle
+build/
+data/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+/dataSources/
+/dataSources.local.xml
+/.gradle/
+/.zcode/
+/.idea/
+
+### IntelliJ IDEA ###
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### Mac OS ###
+.DS_Store

@@ -1,0 +1,83 @@
+# systemd-юнит СТЕНДА. Тот же jar, что и на проде, но своё дерево каталогов под
+# /testing, своя база, свой порт и префикс пути. Установка:
+#   sudo cp deploy/crtlogs-testing.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now crtlogs-testing
+# Проверить ограничения: systemd-analyze security crtlogs-testing
+[Unit]
+Description=crtlogs.ru СТЕНД (/testing/) - поиск по российским CT-логам
+Documentation=https://github.com/Okapist/crtlogs.ru
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=crtlogs-testing
+Group=crtlogs-testing
+WorkingDirectory=/testing/opt/crtlogs
+SyslogIdentifier=crtlogs-testing
+
+# Свой токен, не продовый: стенд раскатывается автоматически с каждого push в master,
+# и утечка его токена не должна открывать /api/logs на проде.
+EnvironmentFile=-/testing/etc/crtlogs/env
+Environment=SPRING_PROFILES_ACTIVE=prod
+# Стенд отвечает по адресу crtlogs.ru/testing/. Caddy проксирует префикс как есть,
+# а context-path говорит приложению, где оно живёт: Jetty сам редиректит
+# /testing -> /testing/ и убирает префикс из пути до контроллеров.
+Environment=SERVER_SERVLET_CONTEXT_PATH=/testing
+Environment=SERVER_PORT=8091
+# Стенд закрыт тем же токеном целиком, а не только на /api/logs: он публично доступен
+# по crtlogs.ru/testing/ и не должен быть виден посторонним. Открытым остаётся только
+# /api/status — по нему crtlogs-deploy проверяет, что сервис поднялся.
+# В браузере: логин любой, пароль — токен из /testing/etc/crtlogs/env.
+Environment=CT_AUTH_PROTECTALL=true
+# Нагрузки на стенде нет, поэтому меньший страничный кеш H2 (32 МБ вместо 64)
+# и редкая синхронизация: догонять логи в реальном времени стенду незачем.
+Environment=SPRING_DATASOURCE_URL=jdbc:h2:file:./data/ctlog;CACHE_SIZE=32768
+Environment=CT_SYNC_INTERVAL=PT1H
+
+# Минимум ресурсов: нагрузки на стенде нет, а машину он делит с продом.
+# Замер под лёгкой нагрузкой с этими флагами: 242 МБ committed, OOM нет.
+ExecStart=/usr/bin/java -Xmx128m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m \
+    -XX:+ExitOnOutOfMemoryError -jar /testing/opt/crtlogs/crtlogs.jar
+Restart=always
+RestartSec=5
+# Потолок, за который стенд не должен вылезать ни при каких условиях: прод на этой же
+# машине важнее, и стенд не должен его вытеснять. Замер — 242 МБ.
+MemoryMax=320M
+# При нехватке CPU и диска прод обслуживается первым (вес по умолчанию — 100).
+CPUWeight=20
+IOWeight=20
+KillSignal=SIGTERM
+# H2 должна успеть закрыть файл: недозакрытая база уходит в recovery на следующем старте
+TimeoutStopSec=60
+
+# --- ограничение прав ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+# единственное, что приложению нужно писать: файловая H2
+ReadWritePaths=/testing/opt/crtlogs/data
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# порт 8091 > 1024, привилегии не нужны ни одной
+CapabilityBoundingSet=
+AmbientCapabilities=
+# MemoryDenyWriteExecute несовместим с JIT — оставляем выключенным осознанно
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target
