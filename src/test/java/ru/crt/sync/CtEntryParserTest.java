@@ -13,10 +13,7 @@ import org.junit.jupiter.api.function.Executable;
 import ru.crt.TestFixtures;
 import ru.crt.client.CtLogClient;
 
-/**
- * Разбор записей CT-лога: реальные записи Yandex-логов и всё, чем запись может быть
- * битой. Ошибка формата — IOException, а не ArrayIndexOutOfBounds из середины.
- */
+/** Разбор записей CT-лога: реальные записи Yandex-логов и всё, чем запись может быть битой. Ошибка формата — IOException, а не ArrayIndexOutOfBounds из середины. */
 class CtEntryParserTest {
 
     /** MerkleTreeLeaf вручную: version(1) + leaf_type(1) + timestamp(8) + entry_type(2) + payload. */

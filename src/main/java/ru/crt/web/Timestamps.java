@@ -5,10 +5,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
 
-/**
- * Формат дат во всей выдаче: ISO без зоны, секунды всегда, миллисекунды при наличии —
- * как у crt.sh. Здесь же datePart/timePart: они режут строку по смещениям этого формата.
- */
+/** Формат дат во всей выдаче: ISO без зоны, секунды всегда, миллисекунды при наличии — как у crt.sh. Здесь же datePart/timePart: они режут строку по смещениям этого формата. */
 final class Timestamps {
 
     private static final DateTimeFormatter ISO = new DateTimeFormatterBuilder()

@@ -15,7 +15,6 @@ public record LogStatus(
         String lastError,
         String updatedAt) {
 
-    /** Проекция строки ct_log: даты получают внешний формат, остальное — как есть. */
     public static LogStatus of(LogRow row) {
         return new LogStatus(row.url(), row.description(), row.operator(), row.lastSyncedIndex(),
                 row.treeSize(), row.lastError(), Timestamps.format(row.updatedAt()));

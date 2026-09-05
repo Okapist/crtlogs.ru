@@ -17,10 +17,7 @@ import org.junit.jupiter.api.Test;
 import ru.crt.AbstractIntegrationTest;
 import ru.crt.client.KnownLog;
 
-/**
- * Сквозной тест хранилища на in-memory H2: вставка реальных записей лога, поиск
- * в семантике crt.sh, идемпотентность, сортировка, пейджинг, состояние логов.
- */
+/** Сквозной тест хранилища на in-memory H2: вставка реальных записей лога, поиск в семантике crt.sh, идемпотентность, сортировка, пейджинг, состояние логов. */
 class CertificateRepositoryTest extends AbstractIntegrationTest {
 
     /** Домен, на котором висят синтетические строки сортировки, — не пересекается с фикстурой. */

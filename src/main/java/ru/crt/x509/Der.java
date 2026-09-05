@@ -3,10 +3,7 @@ package ru.crt.x509;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 
-/**
- * Минимальный разбор DER — то, чего JDK не отдаёт или отдаёт испорченным.
- * Байты приходят от кого угодно: непрочитанная запись — null, а не исключение.
- */
+/** Минимальный разбор DER — то, чего JDK не отдаёт или отдаёт испорченным. Байты приходят от кого угодно: непрочитанная запись — null, а не исключение. */
 public final class Der {
 
     private Der() {
@@ -21,10 +18,7 @@ public final class Der {
     public static final int BMP_STRING = 0x1E;
     public static final int SEQUENCE = 0x30;
 
-    /**
-     * Один разобранный TLV; границы верны только для массива, из которого запись
-     * разобрана, поэтому тип не выходит за пакет.
-     */
+    /** Один разобранный TLV; границы верны только для массива, из которого запись разобрана, поэтому тип не выходит за пакет. */
     record Tlv(int tag, int start, int length) {
 
         /** Конец записи — смещение следующего TLV. */
@@ -41,15 +35,11 @@ public final class Der {
             return new String(der, start, length, charset);
         }
 
-        /** TLV по смещению off; границей служит конец массива. */
         static Tlv at(byte[] der, int off) {
             return at(der, off, der.length);
         }
 
-        /**
-         * TLV по смещению off или null, если запись не читается. limit — конец
-         * родительского TLV, а не буфера: вылезающая за родителя запись — не его часть.
-         */
+        /** TLV по смещению off или null, если запись не читается. limit — конец родительского TLV, а не буфера: вылезающая за родителя запись — не его часть. */
         static Tlv at(byte[] der, int off, int limit) {
             if (off < 0 || limit > der.length || off + 1 >= limit) {
                 return null;

@@ -8,9 +8,8 @@ import java.util.Set;
 import java.util.function.UnaryOperator;
 
 /**
- * Доменное имя в индексной форме (читаемый юникод) и приведение к ней любой записи.
- * Форма одна на приём, индекс и запрос — иначе {@code %.рф} и {@code %.xn--p1ai} —
- * два разных поиска. Юникод, а не punycode: шаблон LIKE режет имя в любом месте.
+ * Доменное имя в индексной форме (читаемый юникод) и приведение к ней любой записи. Форма одна на приём, индекс и запрос — иначе {@code %.рф} и {@code %.xn--p1ai} были бы двумя разными поисками.
+ * Юникод, а не punycode: шаблон LIKE режет имя в любом месте.
  */
 public final class DomainName {
 
@@ -20,7 +19,7 @@ public final class DomainName {
     /** RFC 1035: имени длиннее 253 символов не бывает; cert_domain.domain — VARCHAR(255). */
     public static final int MAX_LENGTH = 253;
 
-    /** Письменности, уживающиеся в одном ярлыке законно (UTS #39); прочее смешение — подделка. */
+    /** Письменности, законно уживающиеся в одном ярлыке (UTS #39); прочее смешение — попытка выдать одно имя за другое. */
     private static final List<Set<Character.UnicodeScript>> MIXABLE = List.of(
             Set.of(Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA,
                     Character.UnicodeScript.KATAKANA),
@@ -31,11 +30,8 @@ public final class DomainName {
     }
 
     /**
-     * Имя в нижнем регистре и в punycode — шаг, на котором сходятся записи одного имени,
-     * отличающиеся письменностью, регистром или нормализацией. Кодируется только ярлык
-     * с не-ASCII символами; знаки по краям ярлыка отделяются, разрезанный посередине
-     * ярлык и ярлык с {@code _} не трогаются (половине ярлыка в punycode ничего
-     * не соответствует).
+     * Имя в нижнем регистре и в punycode — шаг, на котором сходятся записи одного имени, отличающиеся письменностью, регистром или нормализацией.
+     * Кодируется только ярлык с не-ASCII символами; подстановочные знаки по его краям отделяются и приставляются обратно, а ярлык, разрезанный знаком посередине, или ярлык с {@code _} не трогается.
      */
     public static String toAscii(String domain) {
         if (domain == null) {
@@ -46,12 +42,7 @@ public final class DomainName {
         return isAscii(lower) ? lower : mapLabels(lower, DomainName::labelToAscii);
     }
 
-    /**
-     * Форма, в которой имя лежит в {@code cert_domain.domain} и в которой его ищут:
-     * расшифрованный юникод, если он влезает в колонку, иначе имя как записано
-     * (nameprep умеет удлинить — выбрасывать такое имя нельзя, сертификат потерял бы
-     * единственный идентификатор).
-     */
+    /** Форма, в которой имя лежит в {@code cert_domain.domain} и в которой его ищут: расшифрованный юникод, если он влезает в колонку, иначе имя как записано (nameprep умеет удлинить, а выбрасывать нельзя — иначе сертификат потеряет единственное имя). */
     public static String toIndexForm(String name) {
         String canonical = toUnicode(toAscii(name));
         if (canonical == null || canonical.length() <= MAX_LENGTH) {
@@ -65,11 +56,7 @@ public final class DomainName {
         return new StringBuilder(domain).reverse().toString();
     }
 
-    /**
-     * Читаемый вид имени: {@code xn--80aasee0af7fwb.xn--p1ai} -> {@code нашажизнь.рф}.
-     * Ярлык, расшифровке которого верить нельзя, остаётся как есть; знаки по краям
-     * отделяются так же, как в {@link #toAscii} — через это проходит и шаблон поиска.
-     */
+    /** Читаемый вид имени: {@code xn--80aasee0af7fwb.xn--p1ai} -> {@code нашажизнь.рф}; ярлык, расшифровке которого верить нельзя, остаётся как есть. */
     public static String toUnicode(String domain) {
         if (domain == null) {
             return null;
@@ -113,7 +100,7 @@ public final class DomainName {
         return decoded;
     }
 
-    /** Преобразование ярлыка с сохранением знаков по краям; разрезанный знаком посередине — не трогается. */
+    /** Преобразует ярлык, сохраняя подстановочные знаки по краям; ярлык, разрезанный знаком посередине, не трогается вовсе. */
     private static String mapCore(String label, UnaryOperator<String> core) {
         int from = 0;
         int to = label.length();
@@ -140,9 +127,8 @@ public final class DomainName {
     }
 
     /**
-     * Можно ли показывать расшифровку: только буквы, цифры, диакритика, дефис и одна
-     * письменность (законные сочетания — {@link #MIXABLE}). Непрошедший ярлык остаётся
-     * punycode'ом везде — и остаётся находимым: правило одно на все стороны.
+     * Можно ли показывать расшифровку: только буквы, цифры, диакритика, дефис и одна письменность (законные сочетания — {@link #MIXABLE}).
+     * Ярлык, не прошедший проверку, остаётся punycode'ом везде, но находимым быть не перестаёт: правило одно на все стороны.
      */
     private static boolean readable(String label) {
         Set<Character.UnicodeScript> scripts = EnumSet.noneOf(Character.UnicodeScript.class);
@@ -177,7 +163,7 @@ public final class DomainName {
         return true;
     }
 
-    /** Есть ли в имени хоть один {@code xn--} где угодно — чтобы не разбирать на ярлыки зря. */
+    /** Есть ли в имени где-либо {@code xn--}: если нет, и разбирать на ярлыки незачем. */
     private static boolean hasAce(String domain) {
         for (int i = 0; i + ACE.length() <= domain.length(); i++) {
             if (domain.regionMatches(true, i, ACE, 0, ACE.length())) {
@@ -187,7 +173,7 @@ public final class DomainName {
         return false;
     }
 
-    /** По ярлыкам: и punycode, и проверка письменности определены на одном ярлыке; пустые сохраняются. */
+    /** Преобразует по ярлыкам: и punycode, и проверка письменности определены на одном ярлыке; пустые ярлыки сохраняются. */
     private static String mapLabels(String domain, UnaryOperator<String> label) {
         String[] labels = domain.split("\\.", -1);
         for (int i = 0; i < labels.length; i++) {

@@ -33,7 +33,6 @@ class RequestPathsTest {
                 "'+' остаётся собой и рядом с escape'ами, а не только без них");
     }
 
-    /** Битую %-последовательность разбираем как одиночный '%' — тем же правилом, что и строку запроса. */
     @Test
     void brokenPercentSequenceMeansALiteralPercent() {
         assertEquals("/a%zz", normalized("/a%zz"));

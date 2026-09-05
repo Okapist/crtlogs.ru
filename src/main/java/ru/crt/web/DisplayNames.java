@@ -4,16 +4,13 @@ import java.util.List;
 import ru.crt.x509.DistinguishedName;
 import ru.crt.x509.DomainName;
 
-/**
- * Имена сертификата в том виде, в каком их показывают, — расшифрованными
- * ({@link DomainName#toUnicode}); правило одно на выдачу и страницу сертификата.
- */
+/** Имена сертификата в показываемой форме — расшифрованной ({@link DomainName#toUnicode}); правило одно на выдачу поиска и страницу сертификата. */
 final class DisplayNames {
 
     private DisplayNames() {
     }
 
-    /** CN из subject DN — тем же разбором, что и индекс ({@link DistinguishedName}). */
+    /** CN из subject DN; разбор тот же, что у индекса ({@link DistinguishedName}). */
     static String commonName(String subjectDn) {
         return DomainName.toUnicode(DistinguishedName.commonName(subjectDn));
     }

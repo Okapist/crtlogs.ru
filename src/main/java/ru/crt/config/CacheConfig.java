@@ -7,10 +7,7 @@ import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Три кеша: certText — openssl-дамп по sha256 (один DER — одна запись на все логи),
- * search — 5 минут, caIds — issuer DN -> ca.id, без срока.
- */
+/** Три кеша: certText — openssl-дамп по sha256 (один DER — одна запись на все логи), search — страницы поиска на 5 минут, caIds — issuer DN -> ca.id, без срока. */
 @Configuration
 public class CacheConfig {
 

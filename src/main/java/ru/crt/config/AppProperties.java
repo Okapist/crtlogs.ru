@@ -2,10 +2,7 @@ package ru.crt.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/**
- * Настройки {@code ct.*}: JavaBeanBinder требует сеттер у каждого ключа,
- * поэтому поля не final (вложенные объекты создаются здесь — их поля final).
- */
+/** Настройки {@code ct.*}: JavaBeanBinder требует сеттер у каждого ключа, поэтому поля не final (вложенные объекты создаются здесь — их поля final). */
 @ConfigurationProperties(prefix = "ct")
 public class AppProperties {
 

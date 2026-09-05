@@ -67,7 +67,6 @@ class HtmlViewTest {
         assertEquals("?q=q&amp;p=2", readableUrl(emptyResults(2, 3)), "страница — тоже часть поиска");
     }
 
-    /** На странице отказа адрес не переписывается. */
     @Test
     void theErrorPageLeavesTheAddressAlone() {
         assertFalse(HtmlView.indexPage("причина", "%a%", true).contains("readable-url.js"));

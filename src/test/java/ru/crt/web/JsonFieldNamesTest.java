@@ -10,10 +10,7 @@ import ru.crt.AbstractIntegrationTest;
 import ru.crt.TestFixtures;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * Имена полей в выдаче — внешний контракт, держащийся на {@code @JsonNaming}; без этого
- * теста снятая аннотация переименовала бы поля молча. Маппер — из контекста.
- */
+/** Имена полей в выдаче — внешний контракт, держащийся на {@code @JsonNaming}; без этого теста снятая аннотация переименовала бы поля молча. Маппер — из контекста. */
 class JsonFieldNamesTest extends AbstractIntegrationTest {
 
     @Autowired

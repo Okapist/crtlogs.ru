@@ -38,7 +38,6 @@ class CtSyncServiceTest {
     private static final String LOG_A = "https://a.example/log/";
     private static final String LOG_B = "https://b.example/log/";
 
-    /** Запись record'а неизменяема, поэтому один экземпляр обслуживает все стабы. */
     private static final CtLogClient.EntryDoc REAL_ENTRY = TestFixtures.entries().getFirst();
 
     private CtLogClient client;

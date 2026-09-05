@@ -14,11 +14,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/**
- * Любой отказ MVC — с объяснением, а не whitelabel-страницей: reason исключения
- * Boot наружу по умолчанию не выносит. Обработчики поимённо: тип исключения —
- * единственное, что отличает 400/404 от 500.
- */
+/** Любой отказ MVC — с объяснением, а не whitelabel-страницей: reason исключения Boot наружу по умолчанию не выносит. Обработчики поимённо: тип исключения — единственное, что отличает 400/404 от 500. */
 @ControllerAdvice
 class ErrorAdvice {
 
@@ -53,10 +49,7 @@ class ErrorAdvice {
                 "Такой страницы нет. Поиск — на главной, описание API — в README.");
     }
 
-    /**
-     * Всё остальное: текст посетителю не показываем, в журнал — целиком. Штатные
-     * отказы MVC несут свой код в {@link ErrorResponse} — отдаём его, а не 500.
-     */
+    /** Всё остальное: текст посетителю не показываем, в журнал — целиком. Штатные отказы MVC несут свой код в {@link ErrorResponse} — отдаём его, а не 500. */
     @ExceptionHandler(Exception.class)
     ResponseEntity<String> unexpected(Exception failure, HttpServletRequest request) {
         if (failure instanceof ErrorResponse known && known.getStatusCode().is4xxClientError()) {

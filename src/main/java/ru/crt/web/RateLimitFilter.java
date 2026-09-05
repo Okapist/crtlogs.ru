@@ -15,16 +15,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import ru.crt.config.AppProperties;
 
-/**
- * Token bucket на IP: средний темп ct.rate-limit.rps, burst ct.rate-limit.burst.
- * Лимитируются /api/** и поисковые/download-запросы crt.sh-контракта; статика и
- * /api/status — нет.
- */
+/** Token bucket на IP: средний темп ct.rate-limit.rps, burst ct.rate-limit.burst. Лимитируются /api/** и запросы crt.sh-контракта (q/d/id); статика и /api/status — нет. */
 @Component
 @Order(1)
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    /** Параметры, по которым корень отличается от статики: crt.sh-контракт поиска. */
+    /** Параметры crt.sh-контракта поиска: по ним корень отличается от статики. */
     private static final String[] DATA_PARAMS = {"q", "d", "id"};
 
     private final AppProperties props;
@@ -48,8 +44,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return true;
         }
         String path = RequestPaths.normalized(request);
-        // виджет опрашивает /api/status сам с каждой страницы — без исключения обычное
-        // хождение по сайту упиралось бы в лимит
+        // /api/status не лимитируем: виджет опрашивает его сам с каждой страницы
         if (RequestPaths.STATUS.equals(path)) {
             return true;
         }
@@ -79,11 +74,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
     }
 
-    /**
-     * При trust-forwarded клиентский IP — ПОСЛЕДНИЙ элемент X-Forwarded-For: его
-     * проставил ближайший прокси, то есть наш. Первый небезопасен — его присылает
-     * сам клиент, и лимит обходился бы произвольным заголовком.
-     */
+    /** При trust-forwarded клиентский IP — ПОСЛЕДНИЙ элемент X-Forwarded-For: его проставил наш прокси. Первый небезопасен — его присылает сам клиент. */
     String clientIp(HttpServletRequest request) {
         if (props.getRateLimit().isTrustForwarded()) {
             String forwarded = request.getHeader("X-Forwarded-For");
@@ -98,7 +89,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return request.getRemoteAddr();
     }
 
-    /** Пакет-private для unit-теста с синтетическим временем. */
     boolean tryAcquire(String ip, long nowNanos) {
         double capacity = Math.max(1, props.getRateLimit().getBurst());
         double rate = props.getRateLimit().getRps();

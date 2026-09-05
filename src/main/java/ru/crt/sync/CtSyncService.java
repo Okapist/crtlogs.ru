@@ -22,11 +22,7 @@ import ru.crt.config.AppProperties;
 import ru.crt.db.CertificateRepository;
 import ru.crt.x509.X509;
 
-/**
- * Инкрементальная синхронизация всех логов из ctlog.json в локальную БД.
- * Логи обходятся по кругу срезами, ошибка одного лога не останавливает остальные;
- * прогресс каждого лога — в ct_log.last_synced_index.
- */
+/** Инкрементальная синхронизация всех логов из ctlog.json в локальную БД. Логи обходятся по кругу срезами, ошибка одного лога не останавливает остальные; прогресс каждого лога — в ct_log.last_synced_index. */
 @Service
 public class CtSyncService {
 
@@ -35,10 +31,7 @@ public class CtSyncService {
     /** Пачек подряд у одного лога, прежде чем перейти к следующему. */
     private static final int BATCHES_PER_SLICE = 20;
 
-    /**
-     * Предел прохода по времени: без него догон холодной базы шёл бы часами,
-     * а следующий запуск лишь писал бы «предыдущий ещё работает».
-     */
+    /** Предел прохода по времени: без него догон холодной базы шёл бы часами, а следующий запуск лишь писал бы «предыдущий ещё работает». */
     private static final Duration MAX_PASS_DURATION = Duration.ofMinutes(30);
 
     private final CtLogClient client;
@@ -71,7 +64,6 @@ public class CtSyncService {
         syncAll(System.nanoTime() + MAX_PASS_DURATION.toNanos());
     }
 
-    /** Пакет-private для теста с искусственным дедлайном. */
     void syncAll(long deadlineNanos) {
         if (!running.compareAndSet(false, true)) {
             log.info("Предыдущий проход синхронизации работает уже {} мин — пропуск",
@@ -119,7 +111,6 @@ public class CtSyncService {
 
     /**
      * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек.
-     *
      * @return true, если лог догнан не полностью и его надо взять на следующем круге
      */
     private boolean syncSlice(KnownLog ctLog, Map<String, Long> progress) {
@@ -153,7 +144,7 @@ public class CtSyncService {
                 log.info("Синк {}: {}/{} записей{}", ctLog.description(), processed, treeSize,
                         skipped > 0 ? " (не вставлено " + skipped + ")" : "");
             }
-            return true; // срез исчерпан
+            return true;
         } catch (Exception e) {
             log.warn("Лог {} недоступен: {}", ctLog.url(), e.toString());
             repository.markFailed(ctLog.url(), e.toString());

@@ -26,10 +26,7 @@ import ru.crt.x509.Der;
 import ru.crt.x509.DistinguishedName;
 import ru.crt.x509.X509;
 
-/**
- * Текстовый дамп сертификата в духе {@code openssl x509 -text} — как на странице
- * сертификата crt.sh. Побайтовой точности нет, структура повторяется.
- */
+/** Текстовый дамп сертификата в духе {@code openssl x509 -text} — как на странице сертификата crt.sh. Побайтовой точности нет, структура повторяется. */
 public final class CertTextDump {
 
     private static final Logger log = LoggerFactory.getLogger(CertTextDump.class);
@@ -67,10 +64,7 @@ public final class CertTextDump {
             Map.entry("1.2.643.100.1", "OGRN"),
             Map.entry("1.2.643.100.3", "SNILS"));
 
-    /**
-     * "Aug  3 08:05:53 2026 GMT" — как печатает openssl (день — пробелом). У
-     * DateTimeFormatter цифры всегда ASCII; String.format брал бы их из локали.
-     */
+    /** "Aug  3 08:05:53 2026 GMT" — как печатает openssl (день — пробелом). У DateTimeFormatter цифры всегда ASCII; String.format брал бы их из локали. */
     private static final DateTimeFormatter OPENSSL_DATE = new DateTimeFormatterBuilder()
             .appendPattern("MMM ")
             .padNext(2)
@@ -80,7 +74,6 @@ public final class CertTextDump {
             .appendLiteral(" GMT")
             .toFormatter(Locale.ENGLISH);
 
-    /** HexFormat неизменяем и потокобезопасен — держим по одному экземпляру на регистр. */
     private static final HexFormat LOWER_COLON = HexFormat.ofDelimiter(":");
     private static final HexFormat UPPER_COLON = LOWER_COLON.withUpperCase();
 

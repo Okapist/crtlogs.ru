@@ -1,9 +1,6 @@
 package ru.crt.db;
 
-/**
- * Колонка сортировки в семантике crt.sh: индекс параметра {@code sort}, выражение
- * ORDER BY и куски SQL для добора данных из других таблиц — одним местом.
- */
+/** Колонка сортировки в семантике crt.sh: индекс параметра {@code sort}, выражение ORDER BY и куски SQL для добора данных из других таблиц — всё в одном месте. */
 public enum SortColumn {
 
     ID(0, "t.id"),
@@ -47,7 +44,6 @@ public enum SortColumn {
         return selectExtra;
     }
 
-    /** Соединение, дающее колонку из {@link #selectExtra()}; пусто, если не нужно. */
     public String joinSql() {
         return joinSql;
     }

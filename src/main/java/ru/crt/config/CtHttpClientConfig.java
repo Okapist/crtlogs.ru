@@ -24,10 +24,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.util.StringUtils;
 
-/**
- * HTTP-клиент CT-логов и его trust store: при {@code ct.trust-cert} — «JDK cacerts
- * + PEM-файлы»; непригодная настройка не роняет старт, клиент поднимается на cacerts.
- */
+/** HTTP-клиент CT-логов и его trust store: при {@code ct.trust-cert} — «JDK cacerts + PEM-файлы»; непригодная настройка не роняет старт, клиент остаётся на стандартном cacerts. */
 @Configuration
 public class CtHttpClientConfig {
 
@@ -51,7 +48,7 @@ public class CtHttpClientConfig {
         return builder.build();
     }
 
-    /** Существующие ресурсы из настройки (через запятую); classpath: и пути на диске. */
+    /** Существующие ресурсы из настройки (через запятую); понимает classpath: и пути на диске. */
     static List<Resource> extraTrustResources(String setting, ResourceLoader resources) {
         List<Resource> found = new ArrayList<>();
         for (String location : StringUtils.tokenizeToStringArray(setting, ",")) {
@@ -69,7 +66,7 @@ public class CtHttpClientConfig {
         return found;
     }
 
-    /** SSLContext «cacerts + все сертификаты из PEM»; пакет-private для unit-теста. */
+    /** SSLContext «cacerts + все сертификаты из PEM». */
     static SSLContext trustedSslContext(List<Resource> pems) throws IOException, GeneralSecurityException {
         KeyStore anchors = KeyStore.getInstance(KeyStore.getDefaultType());
         Path cacerts = Path.of(System.getProperty("java.home"), "lib", "security", "cacerts");

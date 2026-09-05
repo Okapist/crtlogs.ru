@@ -22,11 +22,7 @@ import ru.crt.sync.CtSyncService;
 import ru.crt.web.CertDetailsService;
 import ru.crt.web.SearchService;
 
-/**
- * База для тестов с поднятым контекстом — один контекст на все классы, одна H2,
- * данные чистятся перед каждым тестом. @AutoConfigureMockMvc здесь, а не на подклассе:
- * он попадает в ключ кеша контекстов.
- */
+/** База для тестов с поднятым контекстом — один контекст на все классы, одна H2, данные чистятся перед каждым тестом. @AutoConfigureMockMvc здесь, а не на подклассе: он попадает в ключ кеша контекстов. */
 @SpringBootTest
 @AutoConfigureMockMvc
 public abstract class AbstractIntegrationTest {
@@ -66,13 +62,11 @@ public abstract class AbstractIntegrationTest {
         cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
     }
 
-    /** Первая страница поиска по домену, id по возрастанию, — самый частый запрос тестов. */
     protected static CertificateRepository.SearchResult firstPage(CertificateRepository repository,
                                                                   String q) {
         return repository.searchPage(q, false, SortColumn.ID, false, 1, 100);
     }
 
-    /** id строк, которые находит поиск по домену, по возрастанию. */
     protected List<Long> idsOf(String domain) {
         return firstPage(repository, domain).ids();
     }
@@ -130,7 +124,6 @@ public abstract class AbstractIntegrationTest {
                 notBefore, notAfter, base.entryTs(), base.issuerDn(), base.domains());
     }
 
-    /** Тот же сертификат на других доменах. */
     protected static CertificateRepository.NewCert withDomains(
             CertificateRepository.NewCert base, long logIndex, String sha256Prefix,
             Set<String> domains) {
@@ -138,7 +131,6 @@ public abstract class AbstractIntegrationTest {
                 base.notBefore(), base.notAfter(), base.entryTs(), base.issuerDn(), domains);
     }
 
-    /** Ещё одна запись того же сертификата в том же логе — отличается только индексом и отпечатком. */
     protected static CertificateRepository.NewCert twinOf(
             CertificateRepository.NewCert base, long logIndex, String sha256Prefix) {
         return copyOf(base, base.logUrl(), logIndex, otherSha256(base, sha256Prefix),

@@ -7,11 +7,7 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.http.MediaType;
 import tools.jackson.core.io.JsonStringEncoder;
 
-/**
- * Отказ в том же виде, в каком клиент просил данные: {@code {"error": "..."}} тем, кто
- * пришёл за JSON, и главная с плашкой — браузеру. Место одно: отказывают и фильтры,
- * и {@link ErrorAdvice}.
- */
+/** Отказ в том же виде, в каком клиент просил данные: {@code {"error": "..."}} тем, кто пришёл за JSON, и главная с плашкой — браузеру. Место одно на всех. */
 final class ErrorReply {
 
     private ErrorReply() {
@@ -27,7 +23,7 @@ final class ErrorReply {
                 || RequestPaths.normalized(request).startsWith("/api/");
     }
 
-    /** Страница отказа — главная с исходным запросом и фильтром в форме. */
+    /** Страница отказа — та же главная, в форме которой остался исходный запрос и фильтр. */
     static Reply of(HttpServletRequest request, String message) {
         if (wantsJson(request)) {
             // текст может нести данные запроса — экранирует Jackson, а не замена двух символов

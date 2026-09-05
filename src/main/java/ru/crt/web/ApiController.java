@@ -15,10 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import ru.crt.db.CertificateRepository;
 
-/**
- * REST API. Основные эндпоинты повторяют контракт crt.sh: {@code /?q=...&output=json},
- * {@code /?d=<id>}, {@code /?id=<id>}; здесь только HTTP, оркестрация — в сервисах.
- */
+/** REST API. Основные эндпоинты повторяют контракт crt.sh: {@code /?q=...&output=json}, {@code /?d=<id>}, {@code /?id=<id>}; здесь только HTTP, оркестрация — в сервисах. */
 @RestController
 public class ApiController {
 
@@ -45,10 +42,7 @@ public class ApiController {
         return html(HtmlView.indexPage());
     }
 
-    /**
-     * Поиск как у crt.sh: сортировка {@code sort} (0 = ID, 1 = Logged At, 2 = Not Before,
-     * 3 = Issuer Name, 4 = Not After), {@code dir=asc|desc}, пейджинг {@code p}.
-     */
+    /** Поиск как у crt.sh: сортировка {@code sort} (0 = ID, 1 = Logged At, 2 = Not Before, 3 = Issuer Name, 4 = Not After), {@code dir=asc|desc}, пейджинг {@code p}. */
     @GetMapping(value = "/", params = {"q", "output=json", "!d", "!id"})
     public List<SearchRow> searchJson(@RequestParam String q,
                                       @RequestParam(required = false) String exclude,
@@ -58,7 +52,6 @@ public class ApiController {
         return search.search(SearchQuery.of(q, exclude, sort, dir, p)).rows();
     }
 
-    /** Та же выдача страницей результатов — ответ по умолчанию, как у crt.sh. */
     @GetMapping(value = "/", params = {"q", "output!=json", "!d", "!id"})
     public ResponseEntity<String> searchHtml(@RequestParam String q,
                                              @RequestParam(required = false) String exclude,
@@ -69,7 +62,6 @@ public class ApiController {
         return html(HtmlView.resultsPage(query, search.search(query)));
     }
 
-    /** Ответ на несуществующий id — один на три эндпоинта сертификата. */
     private static <T> T require(T found, long id) {
         if (found == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "сертификат " + id + " не найден");
@@ -110,10 +102,7 @@ public class ApiController {
         return repository.logRows().stream().map(LogStatus::of).toList();
     }
 
-    /**
-     * Публичный статус синка без токена: без текстов ошибок, для виджета под кнопкой
-     * поиска. Ответ кешируемый — виджет опрашивает его с каждой открытой страницы.
-     */
+    /** Публичный статус синка для виджета под кнопкой поиска: без токена и без текстов ошибок. Ответ кешируемый — виджет опрашивает его с каждой открытой страницы. */
     @GetMapping("/api/status")
     public ResponseEntity<List<LogPublicStatus>> publicStatus() {
         return ResponseEntity.ok()

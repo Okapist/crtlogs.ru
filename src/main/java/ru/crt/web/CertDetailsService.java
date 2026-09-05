@@ -8,10 +8,7 @@ import ru.crt.db.CertRow;
 import ru.crt.db.CertificateRepository;
 import ru.crt.x509.X509;
 
-/**
- * Детали сертификата для страницы и {@code /api/certs/{id}}: строка БД плюс вхождения
- * в логи, отпечатки, openssl-дамп и PEM.
- */
+/** Детали сертификата для страницы и {@code /api/certs/{id}}: строка БД плюс вхождения в логи, отпечатки, openssl-дамп и PEM. */
 @Service
 public class CertDetailsService {
 
@@ -69,7 +66,6 @@ public class CertDetailsService {
         return certText.get(c.sha256(), () -> CertTextDump.render(c.der()));
     }
 
-    /** Вхождения этого же сертификата (тот же sha256) во все синхронизированные логи. */
     private List<CertDetails.LogOccurrence> occurrences(String sha256) {
         return repository.occurrences(sha256).stream()
                 .map(o -> new CertDetails.LogOccurrence(o.logUrl(), o.description(), o.operator(),

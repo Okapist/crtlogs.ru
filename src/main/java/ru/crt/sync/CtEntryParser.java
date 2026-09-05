@@ -11,15 +11,13 @@ import ru.crt.x509.X509;
 
 /**
  * Разбор записи CT-лога (MerkleTreeLeaf + extra_data) в X509Certificate без BouncyCastle.
- * leaf_input: version(1) + leaf_type(1) + timestamp(8) + entry_type(2) + payload;
- * entry_type 0 (x509_entry) — DER сертификата, 1 (precert_entry) — DER из extra_data.
+ * leaf_input: version(1) + leaf_type(1) + timestamp(8) + entry_type(2) + payload; entry_type 0 (x509_entry) — DER сертификата, 1 (precert_entry) — DER из extra_data.
  */
 public final class CtEntryParser {
 
     private CtEntryParser() {
     }
 
-    /** Результат разбора одной записи лога. */
     public record ParsedEntry(
             X509Certificate certificate,
             boolean precert,

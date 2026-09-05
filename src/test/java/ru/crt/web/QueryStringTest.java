@@ -100,7 +100,6 @@ class QueryStringTest {
         }
     }
 
-    /** Значение параметра {@code q} (или другого названного) из строки запроса. */
     private static String value(String query) {
         return value(query, "q");
     }

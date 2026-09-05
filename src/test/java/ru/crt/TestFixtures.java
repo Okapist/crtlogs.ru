@@ -20,10 +20,7 @@ import ru.crt.x509.X509;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/**
- * Общая загрузка фикстур и сборка объектов контракта; разобранные записи
- * и сертификаты считаются один раз на весь прогон.
- */
+/** Общая загрузка фикстур и сборка объектов контракта; разобранные записи и сертификаты считаются один раз на весь прогон. */
 public final class TestFixtures {
 
     /** Реальные записи CT-лога: [0] — x509, [1] — precert. */
@@ -67,7 +64,6 @@ public final class TestFixtures {
         return JSON.readTree(text(resource));
     }
 
-    /** Записи фикстуры в том виде, в каком их отдаёт лог, — как их получает CtSyncService. */
     public static List<CtLogClient.EntryDoc> entries() {
         return ENTRY_DOCS;
     }
@@ -96,11 +92,7 @@ public final class TestFixtures {
         return pemCertificate(bytes(resource));
     }
 
-    /**
-     * Запись лога (x509_entry) с этим сертификатом: так фикстуры проходят через тот же
-     * {@code CtSyncService.toNewCert}, что и прод. MerkleTreeLeaf: version(1) +
-     * leaf_type(1) + timestamp(8) + entry_type(2) + opaque(3-байтовая длина + DER).
-     */
+    /** Запись лога (x509_entry) с этим сертификатом: так фикстуры проходят через тот же {@code CtSyncService.toNewCert}, что и прод. MerkleTreeLeaf: version(1) + leaf_type(1) + timestamp(8) + entry_type(2) + opaque(3-байтовая длина + DER). */
     public static CtLogClient.EntryDoc entryOf(X509Certificate cert, long timestampMs) {
         byte[] der = der(cert);
         byte[] leaf = new byte[15 + der.length];
@@ -134,7 +126,6 @@ public final class TestFixtures {
         return new SearchRow(id, null, null, null, null, null, null, null, null, 0);
     }
 
-    /** Вхождение сертификата в лог; описание и оператор заполнены. */
     public static CertDetails.LogOccurrence occurrence(String logUrl, long logIndex,
                                                        String entryTimestamp) {
         return new CertDetails.LogOccurrence(logUrl, "Example log", "Operator", logIndex,

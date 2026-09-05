@@ -20,7 +20,6 @@ public record SearchQuery(
     /** Параметры поиска; по этому же списку readable-url.js решает, что переносить в адрес. */
     public static final List<String> PARAMETERS = List.of("q", "exclude", "sort", "dir", "p");
 
-    /** Включает ли значение {@code exclude} фильтр действующих. */
     public static boolean excludesExpired(String exclude) {
         return EXCLUDE_EXPIRED.equals(exclude);
     }
@@ -35,12 +34,7 @@ public record SearchQuery(
                 page != null && page >= 1 ? page : 1);
     }
 
-    /**
-     * Совпадает ли направление с умолчанием, то есть можно ли не называть его в адресе.
-     * Спрашиваем здесь, а не сравниваем с {@code true} у вызывающего: умолчание задаётся
-     * строкой выше, и переверни его кто-нибудь — ссылки молча стали бы обещать обратный
-     * порядок, ничего при этом не сломав при компиляции.
-     */
+    /** Совпадает ли направление с умолчанием — можно ли не называть его в адресе. */
     public boolean hasDefaultDirection() {
         return descending == DEFAULT_DESCENDING;
     }

@@ -29,9 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import ru.crt.client.KnownLog;
 import ru.crt.x509.DomainName;
 
-/**
- * Всё обращение к БД.
- */
+/** Всё обращение к БД. */
 @Repository
 public class CertificateRepository {
 
@@ -45,10 +43,7 @@ public class CertificateRepository {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
-    /**
-     * Кеш issuer DN -> ca.id; попадают только зафиксированные id — из откатившейся
-     * транзакции id указывал бы на несуществующую строку.
-     */
+    /** Кеш issuer DN -> ca.id; в него попадают только зафиксированные id — из откатившейся транзакции id указывал бы на несуществующую строку. */
     private final Cache caIds;
 
     public CertificateRepository(JdbcTemplate jdbc, PlatformTransactionManager txManager,
@@ -99,12 +94,10 @@ public class CertificateRepository {
     /** Ширина ct_log.last_error в schema.sql — обрезаем здесь, а не у вызывающих. */
     private static final int MAX_ERROR_LENGTH = 1024;
 
-    /** Лог догнан до конца: фиксируем tree_size и снимаем прежнюю ошибку. */
     public void markCaughtUp(String url, long treeSize) {
         updateLogState(url, treeSize, null, null);
     }
 
-    /** Пачка вставлена: двигаем прогресс, обновляем tree_size и снимаем ошибку. */
     public void advance(String url, long treeSize, long lastIndex) {
         updateLogState(url, treeSize, lastIndex, null);
     }
@@ -144,10 +137,8 @@ public class CertificateRepository {
     // --- вставка (синк) ---
 
     /**
-     * Вставка пачки одной транзакцией; если БД отвергла её из-за одной битой записи
-     * (SAN длиннее 255 и т.п.), повтор по одной с пропуском плохих — иначе такая запись
-     * останавливала бы лог навсегда. Инфраструктурные ошибки уходят наверх.
-     *
+     * Вставка пачки одной транзакцией; если БД отвергла её из-за одной битой записи (SAN длиннее 255 и т.п.), пачка повторяется по одной записи, плохие пропускаются — иначе такая запись останавливала бы лог навсегда.
+     * Инфраструктурные ошибки уходят наверх.
      * @return сколько записей пришлось пропустить
      */
     public int insertCertificates(List<NewCert> certs) {
@@ -258,15 +249,13 @@ public class CertificateRepository {
 
     // --- поиск ---
 
-    /** Запрос считается шаблоном, если содержит подстановочные символы LIKE. */
     public static boolean isWildcard(String q) {
         return q.indexOf('%') >= 0 || q.indexOf('_') >= 0;
     }
 
     /**
-     * Условие отбора по домену и значение к нему — одной парой. Запрос приводится
-     * к индексной форме (toIndexForm), поэтому {@code %.рф} и {@code %.xn--p1ai} —
-     * один запрос; два LIKE через OR планировщик H2 в диапазон индекса не складывает.
+     * Условие отбора по домену и подставляемое в него значение — одной парой, чтобы они не разошлись.
+     * Запрос приводится к индексной форме (toIndexForm), поэтому {@code %.рф} и {@code %.xn--p1ai} — один запрос; два LIKE через OR планировщик H2 в диапазон индекса не складывает.
      */
     private record DomainMatch(String sql, String param) {
 
@@ -284,10 +273,7 @@ public class CertificateRepository {
         }
     }
 
-    /**
-     * Общая часть обоих поисковых запросов: соединение, отбор и параметры —
-     * одной записью, чтобы счётчик и страница не разошлись.
-     */
+    /** Общая часть обоих поисковых запросов: соединение, отбор и параметры — одной записью, чтобы счётчик и страница не разошлись. */
     private record Selection(String sql, Object[] args) {
 
         static Selection of(String extraJoin, DomainMatch match, boolean excludeExpired) {
@@ -305,7 +291,6 @@ public class CertificateRepository {
         }
     }
 
-    /** Текущий момент в том же представлении, в каком лежат все даты, — UTC-локальном. */
     private static LocalDateTime nowUtc() {
         return LocalDateTime.now(ZoneOffset.UTC);
     }
@@ -317,12 +302,7 @@ public class CertificateRepository {
     public record SearchResult(int total, List<Long> ids) {
     }
 
-    /**
-     * Страница выдачи: сколько всего уникальных сертификатов подходит и какие id
-     * попадают на страницу (нумерация с единицы). Оба числа — одной записью:
-     * раздельные кеши разъезжались, и пейджер обещал страницы, которых нет.
-     * Дубли по sha256 сворачиваются в SQL, окно режется в БД.
-     */
+    /** Страница выдачи: сколько всего уникальных сертификатов и какие id попадают на страницу (нумерация с единицы). Оба числа — одной записью: раздельные кеши разъезжались. Дубли по sha256 сворачиваются в SQL, окно режется в БД. */
     @Cacheable(cacheNames = "search",
             key = "#p0 + ':' + (#p1 ? 'expired' : '') + ':' + #p2 + ':' + #p3"
                     + " + ':' + #p4 + ':' + #p5")
@@ -455,7 +435,6 @@ public class CertificateRepository {
     /** H2 ограничивает число параметров запроса, поэтому IN-список режем на куски. */
     private static final int MAX_IDS_PER_QUERY = 1000;
 
-    /** Запрос с {@code IN (...)} по списку id, нарезанный на куски; SQL собирает функция из плейсхолдеров. */
     private void queryByIds(List<Long> ids, UnaryOperator<String> sql, RowCallbackHandler handler) {
         for (int from = 0; from < ids.size(); from += MAX_IDS_PER_QUERY) {
             List<Long> chunk = ids.subList(from, Math.min(from + MAX_IDS_PER_QUERY, ids.size()));

@@ -22,10 +22,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import ru.crt.client.CtLogClient;
 
 /**
- * {@code ?q=%.com} и {@code ?q=%.рф} на живом Jetty — то, ради чего написан
- * {@link LenientQueryFilter}. MockMvc строку запроса не разбирает, а HttpClient
- * одиночный '%' не пропустит, поэтому настоящий сервер и голый сокет. Случай
- * с кириллицей единственный отличает нас от послаблений UriCompliance самого Jetty.
+ * {@code ?q=%.com} и {@code ?q=%.рф} на живом Jetty — то, ради чего написан LenientQueryFilter.
+ * MockMvc строку запроса не разбирает, а HttpClient '%' не пропустит — поэтому настоящий сервер и голый сокет; кириллический случай отличает нас от UriCompliance Jetty.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"ct.rate-limit.enabled=true", "ct.rate-limit.burst=100",
@@ -136,7 +134,6 @@ class MalformedQueryHttpTest {
         return blankLine < 0 ? "" : response.substring(blankLine + 4);
     }
 
-    /** Запрос голым сокетом: цель уходит на сервер ровно так, как написана. */
     private String get(String target) throws Exception {
         return raw("GET " + target + " HTTP/1.1");
     }

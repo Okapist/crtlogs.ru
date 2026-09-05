@@ -31,7 +31,6 @@ public record CertDetails(
         String text,
         String pem) {
 
-    /** Одно вхождение сертификата в CT-лог. */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record LogOccurrence(
             String logUrl,

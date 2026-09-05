@@ -15,10 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import ru.crt.config.AppProperties;
 
-/**
- * Проверка статичного токена (после RateLimitFilter). По умолчанию закрыт только
- * {@code GET /api/logs}; при {@code ct.auth.protect-all} — весь сайт, кроме /api/status.
- */
+/** Проверка статичного токена (после RateLimitFilter). По умолчанию закрыт только {@code GET /api/logs}; при {@code ct.auth.protect-all} — весь сайт, кроме /api/status. */
 @Component
 @Order(2)
 public class AuthTokenFilter extends OncePerRequestFilter {
@@ -56,7 +53,6 @@ public class AuthTokenFilter extends OncePerRequestFilter {
                         : "Нужен токен: заголовок Authorization: Bearer <токен>.");
     }
 
-    /** Пакет-private для unit-теста. */
     boolean isAuthorized(HttpServletRequest request) {
         String expected = props.getAuth().getToken();
         if (expected == null || expected.isEmpty()) {

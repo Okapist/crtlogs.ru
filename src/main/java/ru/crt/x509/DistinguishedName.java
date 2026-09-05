@@ -11,10 +11,7 @@ import javax.naming.ldap.LdapName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Subject/issuer DN сертификата: строка RFC 2253 -> упорядоченные пары «тип атрибута —
- * значение». Разбор один на всех: дамп, колонка Common Name и CN в индексе доменов.
- */
+/** Subject/issuer DN сертификата: строка RFC 2253 -> упорядоченные пары «тип атрибута — значение». Разбор один на всех: дамп, колонка Common Name и CN в индексе доменов. */
 public final class DistinguishedName {
 
     private static final Logger log = LoggerFactory.getLogger(DistinguishedName.class);
@@ -26,7 +23,7 @@ public final class DistinguishedName {
     public record Rdn(String type, String value) {
     }
 
-    /** LdapName снимает экранирование, многозначные RDN и {@code #hex}; непарсящийся DN — пустой список. */
+    /** Разбор отдан LdapName: он снимает экранирование, раскрывает многозначные RDN и декодирует {@code #hex}; непарсящийся DN — пустой список. */
     public static List<Rdn> parse(String rfc2253) {
         List<Rdn> out = new ArrayList<>();
         try {

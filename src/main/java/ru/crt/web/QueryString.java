@@ -9,11 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Строка запроса в обе стороны: разбор пришедшей ({@link #parse}) и сборка той, что
- * уходит ссылкой ({@link #encode}). Оба опираются на одно правило — что считать
- * escape'ом, — иначе ссылка вела бы не туда, откуда её взяли.
- */
+/** Строка запроса в обе стороны: разбор пришедшей ({@link #parse}) и сборка той, что уходит ссылкой ({@link #encode}); правило у них одно — что считать escape'ом. */
 final class QueryString {
 
     private QueryString() {
@@ -24,12 +20,9 @@ final class QueryString {
 
     // --- разбор ---
 
-    /**
-     * Параметры строки запроса: как у контейнера, кроме одиночного '%', который
-     * здесь значит сам себя. Зачем — см. {@link LenientQueryFilter}.
-     */
+    /** Параметры строки запроса: как у контейнера, кроме одиночного '%', который здесь значит сам себя. Зачем — см. {@link LenientQueryFilter}. */
     static Map<String, String[]> parse(String query) {
-        // значения копятся в список: «q=1&q=1…» на 8 КБ — а фильтр стоит до лимитера
+        // значения копятся в список: «q=1&q=1&…» на 8 КБ — 2000 повторов имени, и это до лимитера
         Map<String, List<String>> byName = new LinkedHashMap<>();
         for (String pair : query.split("&")) {
             if (pair.isEmpty()) {
@@ -45,7 +38,7 @@ final class QueryString {
         return Collections.unmodifiableMap(parameters);
     }
 
-    /** Разберёт ли контейнер так же; отличие у нас одно — одиночный '%'. */
+    /** Разберёт ли контейнер эту строку так же; отличие у нас одно — одиночный '%'. */
     static boolean sameAsContainer(String query) {
         return query.indexOf('%') < 0;
     }
@@ -58,7 +51,7 @@ final class QueryString {
         return URLDecoder.decode(escapeStrayPercents(raw), StandardCharsets.UTF_8);
     }
 
-    /** Одиночный '%' — в {@code %25}; тем же приёмом читает свои сегменты {@link RequestPaths}. */
+    /** Одиночный '%' — в {@code %25}; тем же приёмом {@link RequestPaths} читает свои сегменты. */
     static String escapeStrayPercents(String raw) {
         StringBuilder out = new StringBuilder(raw.length() + 8);
         for (int i = 0; i < raw.length(); i++) {
@@ -74,11 +67,7 @@ final class QueryString {
 
     // --- сборка ---
 
-    /**
-     * Значение параметра для адреса: как есть остаются unreserved, всё вне ASCII
-     * и '%', за которым не стоят две шестнадцатеричные цифры. Прочее — в {@code %XX};
-     * результат можно ставить в разметку без экранирования.
-     */
+    /** Значение параметра для адреса: как есть остаются unreserved-символы, всё вне ASCII и '%', после которого нет двух шестнадцатеричных цифр. Прочее — в {@code %XX}; результат можно ставить в разметку без экранирования. */
     static String encode(String value) {
         StringBuilder out = new StringBuilder(value.length() + 8);
         for (int i = 0; i < value.length(); i++) {

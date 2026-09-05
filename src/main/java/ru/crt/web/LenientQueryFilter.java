@@ -17,11 +17,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * Разбирает строку запроса сам, если в ней есть '%': одиночный процент здесь значит
- * сам себя, а не начало escape-последовательности. Правила — в {@link QueryString};
- * настройкой Jetty (UriCompliance) это не решается.
- */
+/** Разбирает строку запроса сам, если в ней есть '%': одиночный процент здесь значит сам себя, а не начало escape-последовательности. Правила — в {@link QueryString}; настройкой Jetty (UriCompliance) это не решается. */
 @Component
 @Order(0)
 public class LenientQueryFilter extends OncePerRequestFilter {
@@ -32,10 +28,7 @@ public class LenientQueryFilter extends OncePerRequestFilter {
         return query == null || QueryString.sameAsContainer(query) || hasFormBody(request);
     }
 
-    /**
-     * Тело-формы разбирает контейнер, и собрать такой же набор параметров нам нечем —
-     * оставляем запрос ему. Спрашиваем тело, а не заголовки о нём: без тела полей нет.
-     */
+    /** Тело-формы разбирает контейнер, и собрать такой же набор параметров нам нечем — оставляем запрос ему. Решаем по самому телу, а не по заголовкам: поля формы появляются, только когда тело непустое. */
     private static boolean hasFormBody(HttpServletRequest request) {
         String contentType = request.getContentType();
         if (contentType == null || !FORM_METHODS.contains(request.getMethod())
@@ -47,7 +40,7 @@ public class LenientQueryFilter extends OncePerRequestFilter {
                 || type.startsWith("multipart/form-data");
     }
 
-    /** Методы, у которых к параметрам добавляются поля формы; их разбирать не нам. */
+    /** Методы, у которых к параметрам добавляются поля формы, — такие запросы фильтр не трогает. */
     private static final Set<String> FORM_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     /** ERROR-диспетч тоже наш: там параметры читает страница ошибки. */

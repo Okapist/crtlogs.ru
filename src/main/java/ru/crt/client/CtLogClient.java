@@ -22,10 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.springframework.stereotype.Component;
 
-/**
- * HTTP-клиент CT-логов (RFC 6962): ctlog.json, get-sth, get-entries.
- * Только протокол; HttpClient с trust store собирает CtHttpClientConfig.
- */
+/** HTTP-клиент CT-логов (RFC 6962): ctlog.json, get-sth, get-entries. Только протокол; HttpClient с trust store собирает CtHttpClientConfig. */
 @Component
 public class CtLogClient {
 
@@ -45,7 +42,7 @@ public class CtLogClient {
     public record OperatorDoc(String name, List<LogDoc> logs) {
     }
 
-    /** Из state берём только ключи: usable/readonly — лог participate в выдаче. */
+    /** Из state важны только ключи: usable/readonly. */
     public record LogDoc(String description, String url, Map<String, JsonNode> state) {
         public boolean isUsableOrReadonly() {
             return state != null && (state.containsKey("usable") || state.containsKey("readonly"));
@@ -103,7 +100,7 @@ public class CtLogClient {
 
     // --- низкоуровневый HTTP ---
 
-    /** Тело приходит от третьей стороны; пачка на 256 записей — единицы мегабайт. */
+    /** Тело приходит от третьей стороны; пачка get-entries на 256 записей — единицы мегабайт, запас пятикратный. */
     private static final int MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(30);

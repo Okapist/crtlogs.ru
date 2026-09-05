@@ -10,7 +10,7 @@ import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.HexFormat;
 
-/** Разбор, отпечатки и PEM сертификата — одним местом для синка, страницы и тестов. */
+/** Разбор, отпечатки и PEM сертификата — всё в одном месте: синк, страница и тесты. */
 public final class X509 {
 
     private static final Base64.Encoder PEM_BODY =

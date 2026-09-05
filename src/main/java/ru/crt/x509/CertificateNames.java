@@ -8,24 +8,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Имена сертификата: CN из subject DN и GeneralNames из SAN, прочитанные из DER
- * своими силами — JDK декодирует dNSName как US-ASCII и превращает UTF-8 кириллицу
- * в U+FFFD. Цена — свои проверки границ и пригодности имени.
- */
+/** Имена сертификата: CN из subject DN и GeneralNames из SAN, прочитанные из DER своими силами — JDK декодирует dNSName как US-ASCII и превращает UTF-8 кириллицу в U+FFFD. Цена — границы имён и их пригодность для индекса проверяем сами. */
 public final class CertificateNames {
 
-    /** OID расширения subjectAltName: тот же и здесь, и там, где дамп решает звать разбор имён. */
+    /** OID расширения subjectAltName. */
     public static final String SAN_OID = "2.5.29.17";
 
     private CertificateNames() {
     }
 
-    /**
-     * Одно имя из GeneralNames: тег (он же тип имени) и содержимое — участок того же
-     * буфера. Не record: на разборе байты не копируются (SAN читается на каждой записи
-     * синка), копию отдаёт лишь {@link #value()}.
-     */
+    /** Одно имя из GeneralNames: тег (он же тип имени) и содержимое — участок того же буфера. Не record: на разборе байты не копируются (SAN читается на каждой записи синка), копию отдаёт лишь {@link #value()}. */
     public static final class GeneralName {
 
         /** Теги, которые страница сертификата называет по имени; остальное — hex. */
@@ -53,7 +45,7 @@ public final class CertificateNames {
             return tlv.text(der, StandardCharsets.UTF_8);
         }
 
-        /** Содержимое как есть — копией: что с ней сделают, разбора уже не касается. */
+        /** Содержимое как есть — копией. */
         public byte[] value() {
             return tlv.value(der);
         }
@@ -69,10 +61,7 @@ public final class CertificateNames {
         }
     }
 
-    /**
-     * Разобранные GeneralNames или null, если внешний SEQUENCE не читается. Границей
-     * служит конец SEQUENCE, а не конец буфера; нечитаемый TLV внутри обрывает разбор.
-     */
+    /** Разобранные GeneralNames или null, если внешний SEQUENCE не читается. Границей служит конец SEQUENCE, а не конец буфера; нечитаемый TLV внутри обрывает разбор. */
     public static List<GeneralName> generalNames(byte[] extensionValue) {
         if (extensionValue == null) {
             return null;
@@ -94,10 +83,7 @@ public final class CertificateNames {
         return out;
     }
 
-    /**
-     * Всё, по чему сертификат ищут: dNSName'ы из SAN плюс CN из subject DN, в индексной
-     * форме и без повторов. Отсутствующий или нечитаемый SAN — не ошибка.
-     */
+    /** Всё, по чему сертификат ищут: dNSName'ы из SAN плюс CN из subject DN, в индексной форме и без повторов. Отсутствующий или нечитаемый SAN — не ошибка. */
     public static Set<String> domainsOf(X509Certificate cert) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         List<GeneralName> san = generalNames(Der.unwrapOctetString(cert.getExtensionValue(SAN_OID)));
@@ -123,10 +109,7 @@ public final class CertificateNames {
         }
     }
 
-    /**
-     * Годится ли имя в индекс cert_domain: слишком длинное или с управляющими символами
-     * БД отвергла бы вместе со всей записью, и сертификат терялся бы целиком.
-     */
+    /** Годится ли имя в индекс cert_domain.domain: если имя не влезает в колонку или содержит управляющие символы, БД отвергает всю запись вместе с сертификатом. */
     static boolean indexable(String dns) {
         if (dns.isBlank() || dns.length() > DomainName.MAX_LENGTH) {
             return false;

@@ -6,14 +6,10 @@ import org.springframework.http.MediaType;
 import org.springframework.web.util.HtmlUtils;
 import ru.crt.db.SortColumn;
 
-/**
- * Серверный рендер всех трёх страниц в стиле crt.sh, без шаблонизатора. Все ссылки
- * относительные — стенд живёт под префиксом /testing/; числа подставляются через
- * {@code %s}, а не {@code %d} (formatted берёт локаль по умолчанию).
- */
+/** Серверный рендер всех трёх страниц в стиле crt.sh, без шаблонизатора. Ссылки относительные — стенд живёт под /testing/; числа через {@code %s}, а не {@code %d} (formatted берёт локаль по умолчанию). */
 final class HtmlView {
 
-    /** Тип всех HTML-ответов — и страниц, и отказов; один на контроллер и {@link ErrorReply}. */
+    /** Тип всех HTML-ответов — и страниц, и отказов; общий для контроллера и {@link ErrorReply}. */
     static final MediaType CONTENT_TYPE = new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8);
 
     private HtmlView() {
@@ -40,10 +36,7 @@ final class HtmlView {
 
             """ + COPYRIGHT + "<SCRIPT src=\"logs-status.js\"></SCRIPT>\n";
 
-    /**
-     * Каркас страницы: {@code headerExtras} — справа в шапке, {@code head} — стили,
-     * {@code body} — всё до счётчика, включая копирайт.
-     */
+    /** Каркас страницы; копирайт — часть body (у страницы сертификата он после таблицы). */
     private static String page(String title, String heading, String headerExtras,
                                String head, String body) {
         return page(title, heading, headerExtras, head, body, "");
@@ -123,6 +116,8 @@ final class HtmlView {
     /** Форма поиска; значение и чекбокс — параметрами: страница отказа показывает её же с исходным запросом. */
     private static String searchForm(String q, boolean excludeExpired) {
         return """
+                  <!-- обычный GET-submit: результаты рисует сервер (resultsPage), поэтому -->
+                  <!-- прямая ссылка, F5 и «назад» работают без отдельной клиентской ветки -->
                   <FORM id="searchForm" action="./" method="get">
                     <INPUT class="input" type="text" name="q" required autofocus autocomplete="off"
                            value="%s" placeholder="домен, например example.ru">
@@ -144,24 +139,20 @@ final class HtmlView {
 
     private static final String INDEX_BODY = searchForm("", false) + "\n" + HINT + LOGS_WIDGET;
 
-    /** Начало любой ссылки: запрос и фильтр; относительно и без «./» — работает и в корне, и на стенде. */
+    /** Начало любой ссылки: запрос и фильтр; адрес относительный, без «./» — работает и в корне, и на стенде. */
     private static String searchUrl(String encodedQuery, boolean excludeExpired) {
         return "?q=" + encodedQuery
                 + (excludeExpired ? "&amp;exclude=" + SearchQuery.EXCLUDE_EXPIRED : "");
     }
 
-    /** Сортировка и направление, если отличаются от умолчаний — иначе readable-url.js таскал бы их в адрес. */
+    /** Сортировка и направление, если отличаются от умолчаний — иначе адрес в браузере всегда нёс бы &sort=1. */
     private static String sortSuffix(SearchQuery query) {
         return (query.sort() == SortColumn.DEFAULT ? "" : "&amp;sort=" + query.sort().index())
                 + (query.hasDefaultDirection() ? ""
                         : "&amp;dir=" + (query.descending() ? "desc" : "asc"));
     }
 
-    /**
-     * Скрипт, переписывающий адрес в строке браузера на читаемый. Готовый адрес приходит
-     * атрибутом; всё, чего нет в {@link SearchQuery#PARAMETERS}, переносится как есть
-     * (иначе переписывание выкидывало бы чужие метки — utm, yclid).
-     */
+    /** Скрипт, переписывающий адрес в строке браузера на читаемый; готовый адрес приходит атрибутом, всё, чего нет в {@link SearchQuery#PARAMETERS}, переносится как есть. */
     private static String readableUrlScript(String url) {
         return "  <SCRIPT src=\"readable-url.js\" data-url=\"%s\" data-keep=\"%s\"></SCRIPT>\n"
                 .formatted(url, String.join(",", SearchQuery.PARAMETERS));
@@ -194,11 +185,7 @@ final class HtmlView {
             </STYLE>
             """;
 
-    /**
-     * Та же главная с объяснением, что пошло не так, и сохранённым в форме запросом:
-     * отказ правится на месте. Причина обязательна текстом — голый код 400 ничего
-     * не говорит.
-     */
+    /** Та же главная с причиной отказа и сохранённым в форме запросом — отказ правится на месте. */
     static String indexPage(String message, String q, boolean excludeExpired) {
         // адрес здесь не переписываем: по одному лишь q не восстановить, откуда посетителя отбили
         String body = "  <DIV id=\"error\">" + esc(message) + "</DIV>\n\n"
@@ -489,10 +476,7 @@ final class HtmlView {
 
     // --- вспомогательное ---
 
-    /**
-     * HTML-экранирование; кодировку передаём явно — однопараметрический htmlEscape
-     * работает как ISO-8859-1 и превращает кириллицу в числовые сущности.
-     */
+    /** HTML-экранирование; кодировку передаём явно — однопараметрический htmlEscape работает как ISO-8859-1 и превращает кириллицу в числовые сущности. */
     static String esc(String s) {
         return s == null ? "" : HtmlUtils.htmlEscape(s, "UTF-8");
     }

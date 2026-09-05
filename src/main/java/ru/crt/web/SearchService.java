@@ -7,10 +7,7 @@ import org.springframework.web.server.ResponseStatusException;
 import ru.crt.db.CertRow;
 import ru.crt.db.CertificateRepository;
 
-/**
- * Единственный вход в поиск: проверка запроса, счётчик, окно страницы и строки выдачи
- * в контракте crt.sh. Отказ — ResponseStatusException: код 400 и текст — часть контракта.
- */
+/** Единственный вход в поиск: проверка запроса, счётчик, окно страницы и строки выдачи в контракте crt.sh. Отказ — ResponseStatusException: код 400 и текст — часть контракта. */
 @Service
 public class SearchService {
 
@@ -43,7 +40,7 @@ public class SearchService {
         return new SearchPage(rows(repository.certRows(found.ids()), found.total()), found.total());
     }
 
-    /** Шаблон без значащих символов: {@code %}, {@code %_}, {@code %a%} — «выдай базу целиком». */
+    /** Шаблон с одним значащим символом или меньше ({@code %}, {@code %a%}) — «выдай базу целиком». */
     static boolean isTooBroadcast(String q) {
         return CertificateRepository.isWildcard(q)
                 && q.replace("%", "").replace("_", "").length() < MIN_PATTERN_CHARS;

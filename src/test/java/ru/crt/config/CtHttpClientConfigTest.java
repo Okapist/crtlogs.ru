@@ -19,10 +19,7 @@ import org.springframework.core.io.Resource;
 import ru.crt.TestFixtures;
 import ru.crt.x509.X509;
 
-/**
- * Trust store клиента CT-логов: серверы Минцифры не присылают цепочку целиком,
- * поэтому к cacerts подмешиваются корень и промежуточный сертификат их УЦ.
- */
+/** Trust store клиента CT-логов: серверы Минцифры не присылают цепочку целиком, поэтому к cacerts подмешиваются корень и промежуточный сертификат их УЦ. */
 class CtHttpClientConfigTest {
 
     private static final DefaultResourceLoader RESOURCES = new DefaultResourceLoader();

@@ -70,7 +70,6 @@ class CtLogClientTest {
         REQUESTS.clear();
     }
 
-    /** Адрес локального лога: путь передаётся целиком, чтобы был виден в самом тесте. */
     private static String url(String path) {
         return "http://127.0.0.1:" + server.getAddress().getPort() + path;
     }
@@ -186,7 +185,6 @@ class CtLogClientTest {
 
     // --- предел на размер ответа ---
 
-    /** Подписка, которая только запоминает, отменили ли её. */
     private static final class RecordingSubscription implements Flow.Subscription {
 
         private boolean cancelled;

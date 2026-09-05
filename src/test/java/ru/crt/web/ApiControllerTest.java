@@ -22,10 +22,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import ru.crt.AbstractIntegrationTest;
 import ru.crt.db.CertificateRepository;
 
-/**
- * HTTP-контракт целиком: маршруты crt.sh и наши расширения /api/*. Лимит запросов
- * в тестовой конфигурации выключен, токен — test-token (src/test/resources/application.yml).
- */
+/** HTTP-контракт целиком: маршруты crt.sh и наши расширения /api/*. Лимит запросов в тестовой конфигурации выключен, токен — test-token (src/test/resources/application.yml). */
 class ApiControllerTest extends AbstractIntegrationTest {
 
     @Autowired
