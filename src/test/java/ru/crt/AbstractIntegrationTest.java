@@ -23,17 +23,9 @@ import ru.crt.web.CertDetailsService;
 import ru.crt.web.SearchService;
 
 /**
- * База для тестов, которым нужен поднятый контекст. Настройка одна на всех, поэтому
- * Spring переиспользует один контекст, а не поднимает его на каждый класс.
- *
- * <p>H2 in-memory живёт вместе с контекстом, то есть одна на все такие тесты, поэтому
- * данные чистятся перед каждым тестом: иначе классы видели бы строки друг друга и
- * результат зависел бы от порядка выполнения.
- *
- * <p>{@code @AutoConfigureMockMvc} стоит здесь, а не на классе с MockMvc: он попадает в
- * ключ кеша контекстов, поэтому на подклассе развалил бы «один контекст на всех» —
- * Spring поднимал бы второй со своим пулом Hikari. Тем, кто MockMvc не инжектит, он ничем
- * не мешает: @SpringBootTest и так поднимает mock-окружение сервлета.
+ * База для тестов с поднятым контекстом — один контекст на все классы, одна H2,
+ * данные чистятся перед каждым тестом. @AutoConfigureMockMvc здесь, а не на подклассе:
+ * он попадает в ключ кеша контекстов.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -85,11 +77,7 @@ public abstract class AbstractIntegrationTest {
         return firstPage(repository, domain).ids();
     }
 
-    /**
-     * Те же строки, что построил бы синк из фикстуры ({@code [0]} — x509 cateam.ru,
-     * {@code [1]} — precert khaos.today), — через {@link CtSyncService#toNewCert}, а не
-     * через свою копию маппинга.
-     */
+    /** Строки, которые построил бы синк из фикстуры — через {@link CtSyncService#toNewCert}, а не свою копию. */
     protected List<CertificateRepository.NewCert> fixtureCerts() throws Exception {
         List<CtLogClient.EntryDoc> entries = TestFixtures.entries();
         List<CertificateRepository.NewCert> rows = new ArrayList<>(entries.size());
@@ -106,20 +94,14 @@ public abstract class AbstractIntegrationTest {
         return rows.getFirst();
     }
 
-    /**
-     * Вставленный сертификат Минцифры на кириллический домен: и CN, и dNSName записаны в
-     * нём юникодом. Идёт тем же путём, что и записи настоящих логов ({@link #fixtureCerts}).
-     */
+    /** Сертификат Минцифры на кириллический домен — тем же путём, что и записи логов. */
     protected void insertCyrillicCert() throws Exception {
         X509Certificate cert = TestFixtures.pemCertificate(TestFixtures.CYRILLIC_CERT);
         repository.insertCertificates(List.of(CtSyncService.toNewCert(LOG_URL, 900,
                 TestFixtures.entryOf(cert, System.currentTimeMillis()))));
     }
 
-    /**
-     * Копия строки с переопределёнными полями: у record'а нет wither'ов, а тестам нужны
-     * варианты одной и той же записи. Единственное место, знающее форму конструктора.
-     */
+    /** Копия строки с переопределёнными полями; единственное место, знающее конструктор. */
     protected static CertificateRepository.NewCert copyOf(
             CertificateRepository.NewCert base, String logUrl, long logIndex, String sha256,
             LocalDateTime notBefore, LocalDateTime notAfter, LocalDateTime entryTs,
@@ -133,12 +115,7 @@ public abstract class AbstractIntegrationTest {
         return prefix + base.sha256().substring(prefix.length());
     }
 
-    /**
-     * Тот же сертификат, найденный в другом логе: sha256 и все даты сохраняются, иначе
-     * это был бы уже другой сертификат. Дальше — три варианта «то же самое, но с другим
-     * X»: имя вызова говорит, что именно меняется, а восемь позиционных аргументов
-     * {@link #copyOf} остаются в одном месте.
-     */
+    /** Тот же сертификат в другом логе: sha256 и все даты сохраняются. */
     protected static CertificateRepository.NewCert inLog(
             CertificateRepository.NewCert base, String logUrl, long logIndex) {
         return copyOf(base, logUrl, logIndex, base.sha256(), base.notBefore(), base.notAfter(),

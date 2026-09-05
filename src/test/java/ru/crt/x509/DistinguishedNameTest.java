@@ -7,11 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/**
- * Разбор DN в формате RFC 2253. Один и тот же результат читают дамп сертификата,
- * колонка Common Name в выдаче и индекс доменов, поэтому правила разбора закреплены
- * здесь один раз.
- */
+/** Разбор DN в формате RFC 2253 — его читают дамп, Common Name выдачи и индекс доменов. */
 class DistinguishedNameTest {
 
     /** Наивный split по ',' рвал значения с экранированной запятой, а Map терял повторный OU. */

@@ -31,19 +31,9 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.NullNode;
 
-/**
- * Клиент CT-логов: разбор JSON на реальных фикстурах, сборка URL и обработка ответов
- * поверх настоящего HTTP (локальный сервер на случайном порту — в интернет тест не ходит).
- * Сборку HttpClient и trust store проверяет CtHttpClientConfigTest.
- */
+/** Клиент CT-логов: разбор JSON на реальных фикстурах и HTTP поверх локального сервера. */
 class CtLogClientTest {
 
-    /**
-     * Клиент без состояния и потокобезопасен, поэтому один на класс: на каждый тест он
-     * заводил бы свой ObjectMapper и свой пул соединений HttpClient. Имена полей задаёт
-     * @JsonNaming на самих record'ах, так что обычный ObjectMapper разбирает их так же,
-     * как настроенный бин приложения.
-     */
     private static final CtLogClient CLIENT =
             new CtLogClient(new ObjectMapper(), HttpClient.newHttpClient());
 
@@ -91,11 +81,7 @@ class CtLogClientTest {
 
     // --- разбор JSON ---
 
-    /**
-     * Настоящий ctlog.json несёт кучу полей, которых нет в наших record'ах (key, log_id,
-     * mmd, temporal_interval). Jackson 3 игнорирует неизвестные поля по умолчанию — на
-     * этом и держится отсутствие @JsonIgnoreProperties, поэтому проверяем на живом файле.
-     */
+    /** Jackson 3 игнорирует неизвестные поля — проверяем на живом ctlog.json. */
     @Test
     void parsesRealLogListIgnoringFieldsWeDoNotModel() {
         CtLogClient.LogListDoc doc = CLIENT.parse(TestFixtures.bytes(TestFixtures.LOG_LIST), CtLogClient.LogListDoc.class);
@@ -110,7 +96,6 @@ class CtLogClientTest {
 
     @Test
     void stateFilterAcceptsUsableAndReadonlyOnly() {
-        // фильтр смотрит только на ключи state, поэтому значение — любой узел
         JsonNode any = NullNode.getInstance();
         assertTrue(new CtLogClient.LogDoc("d", "u", Map.of("usable", any)).isUsableOrReadonly());
         assertTrue(new CtLogClient.LogDoc("d", "u", Map.of("readonly", any)).isUsableOrReadonly());
@@ -118,10 +103,6 @@ class CtLogClientTest {
         assertFalse(new CtLogClient.LogDoc("d", "u", null).isUsableOrReadonly());
     }
 
-    /**
-     * Имена полей протокола (RFC 6962) — snake_case, в Java они camelCase, и связывает
-     * их @JsonNaming. Подписи и корневого хеша в нашем record'е нет — они пропускаются.
-     */
     @Test
     void sthFieldsAreReadFromSnakeCaseNames() {
         CtLogClient.Sth sth = CLIENT.parse(("{\"tree_size\":8956,\"timestamp\":1787871725409,"
@@ -132,7 +113,6 @@ class CtLogClientTest {
         assertEquals(1787871725409L, sth.timestamp());
     }
 
-    /** Та же связка имён для записей лога, но на настоящем ответе get-entries. */
     @Test
     void entryFieldsAreReadFromSnakeCaseNames() {
         CtLogClient.EntriesDoc doc = CLIENT.parse(TestFixtures.bytes(TestFixtures.ENTRIES), CtLogClient.EntriesDoc.class);
@@ -166,7 +146,6 @@ class CtLogClientTest {
                 "границы диапазона уходят в query как есть");
     }
 
-    /** Лог может ответить без поля entries — это не повод падать с NPE. */
     @Test
     void responseWithoutEntriesIsAnEmptyList() throws Exception {
         respond("/log/ct/v1/get-entries", "{}");
@@ -180,10 +159,6 @@ class CtLogClientTest {
         assertTrue(failure.getMessage().contains("get-sth"), "и адрес, на котором она случилась");
     }
 
-    /**
-     * Список логов приходит сгруппированным по операторам, а работаем мы с плоским
-     * списком: имя оператора должно доехать до каждой строки, а неготовые логи — отсеяться.
-     */
     @Test
     void logListIsFlattenedWithOperatorNamesAndFiltered() throws Exception {
         respond("/ctlog.json", """
@@ -213,6 +188,7 @@ class CtLogClientTest {
 
     /** Подписка, которая только запоминает, отменили ли её. */
     private static final class RecordingSubscription implements Flow.Subscription {
+
         private boolean cancelled;
 
         @Override
@@ -231,7 +207,6 @@ class CtLogClientTest {
         return body;
     }
 
-    /** Куски приходят как есть и склеиваются в исходный порядок. */
     @Test
     void bodyWithinTheLimitIsAssembledFromItsChunks() throws Exception {
         CtLogClient.LimitedBody body = subscribedBody(16, new RecordingSubscription());
@@ -243,11 +218,7 @@ class CtLogClientTest {
         assertArrayEquals(new byte[]{1, 2, 3, 4}, body.getBody().toCompletableFuture().get());
     }
 
-    /**
-     * Тело приходит от третьей стороны, а стенд живёт под -Xmx128m: ответ сверх предела
-     * должен обрывать чтение, а не укладываться в память целиком. Штатный ofString
-     * читал столько, сколько пришлют.
-     */
+    /** Ответ сверх предела обрывает чтение — стенд живёт под -Xmx128m. */
     @Test
     void oversizedBodyIsRejectedAndTheSubscriptionCancelled() {
         RecordingSubscription subscription = new RecordingSubscription();
@@ -264,7 +235,6 @@ class CtLogClientTest {
         assertTrue(failure.getCause().getMessage().contains("log.example"), "в ошибке виден лог");
     }
 
-    /** Данные после превышения предела игнорируются, а не досоздают ответ. */
     @Test
     void chunksAfterTheLimitDoNotResurrectTheResponse() {
         CtLogClient.LimitedBody body = subscribedBody(1, new RecordingSubscription());

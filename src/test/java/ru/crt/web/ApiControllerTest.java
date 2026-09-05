@@ -23,15 +23,8 @@ import ru.crt.AbstractIntegrationTest;
 import ru.crt.db.CertificateRepository;
 
 /**
- * HTTP-контракт целиком: маршруты crt.sh ({@code /?q=}, {@code /?d=}, {@code /?id=}),
- * наши расширения ({@code /api/*}) и то, доходят ли до запроса параметры сортировки
- * и пейджинга. Лимит запросов в тестовой конфигурации выключен, токен — test-token
- * (src/test/resources/application.yml).
- *
- * <p>Здесь проверяется поведение эндпоинтов: состав полей JSON закреплён отдельно в
- * {@link JsonFieldNamesTest}, разметка страниц — в {@link HtmlViewTest}, содержимое
- * выдачи — в {@link SearchServiceTest}, а какая колонка стоит за каким индексом
- * сортировки — в CertificateRepositoryTest.
+ * HTTP-контракт целиком: маршруты crt.sh и наши расширения /api/*. Лимит запросов
+ * в тестовой конфигурации выключен, токен — test-token (src/test/resources/application.yml).
  */
 class ApiControllerTest extends AbstractIntegrationTest {
 
@@ -76,10 +69,6 @@ class ApiControllerTest extends AbstractIntegrationTest {
                 .andExpect(content().contentType("text/html;charset=UTF-8"));
     }
 
-    /**
-     * Пустой и слишком общий запросы отбиваются кодом 400. Какие именно шаблоны
-     * считаются слишком общими, перечисляет CertificateRepositoryTest.
-     */
     @Test
     void emptyAndTooBroadQueriesAreRejected() throws Exception {
         mvc.perform(get("/").param("q", "   ")).andExpect(status().isBadRequest());
@@ -88,11 +77,7 @@ class ApiControllerTest extends AbstractIntegrationTest {
         mvc.perform(get("/").param("q", "%vk%").param("output", "json")).andExpect(status().isOk());
     }
 
-    /**
-     * Отказ объясняется посетителю на той же главной, а не отдаётся кодом 400 в пустой
-     * whitelabel-странице: причину Spring по умолчанию наружу не выносит, и без своего
-     * обработчика единственное, что видит человек, — «400».
-     */
+    /** Отказ объясняется на главной, а не кодом 400 в пустой странице. */
     @Test
     void rejectedSearchExplainsItselfOnThePageAndInJson() throws Exception {
         mvc.perform(get("/").param("q", "%a%"))
@@ -112,7 +97,6 @@ class ApiControllerTest extends AbstractIntegrationTest {
     /** Остальные отказы — тем же способом: текстом, а не кодом ответа. */
     @Test
     void everyOtherFailureAlsoCarriesAReadableMessage() throws Exception {
-        // несуществующий сертификат — на всех трёх входах
         mvc.perform(get("/").param("id", "999999"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().string(containsString("сертификат 999999 не найден")));
@@ -123,18 +107,15 @@ class ApiControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error", containsString("не найден")));
 
-        // нечисловой id: раньше Spring отвечал 400 вообще без тела
         mvc.perform(get("/").param("id", "abc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().string(containsString("должен быть целым числом")));
 
-        // несуществующий путь
         mvc.perform(get("/no-such-page"))
                 .andExpect(status().isNotFound())
                 .andExpect(content().string(containsString("Такой страницы нет")));
 
-        // отказ самого MVC: код у него свой (405), и подменять его пятисоткой нельзя —
-        // иначе чужой кривой запрос выглядел бы как наш сбой
+        // код у отказа MVC свой (405) — подменять его пятисоткой нельзя
         mvc.perform(post("/"))
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(content().string(containsString("Запрос отклонён")));
@@ -172,10 +153,6 @@ class ApiControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.occurrences[0].log_url").value(LOG_URL));
     }
 
-    /**
-     * sort и dir доходят до запроса: какая колонка стоит за каким индексом, проверяет
-     * тест хранилища, здесь важно, что параметры не теряются по дороге и dir работает.
-     */
     @Test
     void sortAndDirectionParametersReachTheQuery() throws Exception {
         repository.insertCertificates(List.of(twinOf(insertFixture(), 500, "dd")));
@@ -190,7 +167,6 @@ class ApiControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[1].id").value(ids.get(0).intValue()));
     }
 
-    /** Смещение обрезается по общему числу совпадений, иначе OFFSET уезжал бы за конец выборки. */
     @Test
     void pageBeyondTheLastOneIsEmptyAndNonPositivePagesMeanTheFirst() throws Exception {
         insertFixture();
@@ -215,7 +191,6 @@ class ApiControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$", hasSize(1)));
     }
 
-    /** /api/logs закрыт токеном, /api/status открыт, но текста ошибки не отдаёт — только флаг ok. */
     @Test
     void logsEndpointIsClosedByTokenWhileStatusIsPublicAndHidesErrorText() throws Exception {
         repository.upsertLog(LOG_URL, "Test log", "Tester");
@@ -239,10 +214,6 @@ class ApiControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$[0].last_error").doesNotExist());
     }
 
-    /**
-     * Виджет статуса опрашивает эндпоинт с каждой открытой страницы, поэтому ответ
-     * кешируемый и не тратит бюджет лимита частоты (см. RateLimitFilter).
-     */
     @Test
     void publicStatusIsCacheable() throws Exception {
         mvc.perform(get("/api/status"))

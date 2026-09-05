@@ -17,8 +17,7 @@ import ru.crt.config.AppProperties;
 
 /**
  * Проверка статичного токена (после RateLimitFilter). По умолчанию закрыт только
- * {@code GET /api/logs}; при {@code ct.auth.protect-all} — весь сайт, этим живёт стенд.
- * Пустой сконфигурированный токен означает «закрыто»: 401 на всё.
+ * {@code GET /api/logs}; при {@code ct.auth.protect-all} — весь сайт, кроме /api/status.
  */
 @Component
 @Order(2)
@@ -30,12 +29,7 @@ public class AuthTokenFilter extends OncePerRequestFilter {
         this.props = props;
     }
 
-    /**
-     * При protect-all открытым остаётся единственный путь — {@link RequestPaths#STATUS}:
-     * по нему стучится проверка живости из crtlogs-deploy. Если закрыть и его, неудачная
-     * авторизация выглядела бы как «сервис не поднялся», и деплой откатывался бы вечно.
-     * Данные там те же, что и на открытом проде, — прогресс синхронизации.
-     */
+    /** При protect-all открыт только {@link RequestPaths#STATUS} — проверка живости из crtlogs-deploy. */
     @Override
     protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
         String path = RequestPaths.normalized(request);
@@ -52,13 +46,10 @@ public class AuthTokenFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
-        // Basic — чтобы закрытый стенд можно было открыть браузером: он сам покажет
-        // окно ввода, где логин любой, а пароль — тот же токен. Для API остаётся Bearer.
+        // Basic — чтобы закрытый стенд можно было открыть браузером: логин любой, пароль — токен
         response.setHeader("WWW-Authenticate", props.getAuth().isProtectAll()
                 ? "Basic realm=\"crtlogs\", charset=\"UTF-8\""
                 : "Bearer");
-        // на стенде это видит человек (браузер покажет окно ввода, а после отмены —
-        // тело ответа), на проде — клиент /api/logs; текст один и говорит, чего не хватает
         ErrorReply.write(request, response, HttpServletResponse.SC_UNAUTHORIZED,
                 props.getAuth().isProtectAll()
                         ? "Стенд закрыт: логин любой, пароль — токен стенда."

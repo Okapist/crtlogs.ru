@@ -17,14 +17,9 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
-/**
- * Где фильтр вмешивается в разбор строки запроса и что после этого видит следующее
- * звено цепочки. Сами правила разбора — в {@link QueryStringTest}, поведение на живом
- * Jetty — в {@link MalformedQueryHttpTest}.
- */
+/** Где фильтр вмешивается в разбор и что после этого видит следующее звено. */
 class LenientQueryFilterTest {
 
-    /** Подменённый запрос отдаёт одни и те же значения всеми четырьмя способами. */
     @Test
     void wrappedRequestAnswersThroughEveryAccessor() throws ServletException, IOException {
         HttpServletRequest wrapped = passThrough(request("q=%.com&output=json"));
@@ -37,11 +32,7 @@ class LenientQueryFilterTest {
         assertEquals("q=%.com&output=json", wrapped.getQueryString(), "исходная строка запроса не переписывается");
     }
 
-    /**
-     * Ошибиться контейнер может только на '%', поэтому всё остальное проходит нетронутым:
-     * подменять разбор там, где он и так верен, значит заводить второй его вариант на
-     * пути каждого запроса.
-     */
+    /** Ошибиться контейнер может только на '%' — остальное проходит нетронутым. */
     @Test
     void requestsThatCannotConfuseTheContainerArePassedThroughUntouched() throws ServletException, IOException {
         LenientQueryFilter filter = new LenientQueryFilter();
@@ -52,11 +43,7 @@ class LenientQueryFilterTest {
         assertFalse(filter.shouldNotFilter(request("q=%.com")));
     }
 
-    /**
-     * В стороне остаётся только тело-форма: её поля добавляются к параметрам помимо
-     * строки запроса, а собрать их нам нечем. Метод сам по себе ни при чём — на этом
-     * фильтр раньше и ошибался: {@code POST /?q=%.com} проходил мимо и отвечал пятисоткой.
-     */
+    /** В стороне только тело-форма: её поля собрать нам нечем. */
     @Test
     void onlyFormBodiesAreLeftToWhoeverParsesThem() {
         LenientQueryFilter filter = new LenientQueryFilter();
@@ -66,8 +53,6 @@ class LenientQueryFilterTest {
             request.setMethod(method);
             assertFalse(filter.shouldNotFilter(request), method + " без тела-формы разбираем сами");
         }
-        // PUT, PATCH и DELETE разбирает не контейнер, а OrderedFormContentFilter Spring'а,
-        // и он стоит раньше нас — забрать у него разобранное тело нельзя так же, как у POST
         for (String method : new String[]{"POST", "PUT", "PATCH", "DELETE"}) {
             for (String contentType : new String[]{"application/x-www-form-urlencoded",
                     "APPLICATION/X-WWW-FORM-URLENCODED", "multipart/form-data; boundary=x"}) {
@@ -87,10 +72,6 @@ class LenientQueryFilterTest {
         return request;
     }
 
-    /**
-     * ERROR-диспетч OncePerRequestFilter пропускает по умолчанию, а это ровно тот проход,
-     * где параметры читает страница ошибки.
-     */
     @Test
     void errorDispatchIsCoveredToo() {
         assertFalse(new LenientQueryFilter().shouldNotFilterErrorDispatch());
@@ -102,7 +83,6 @@ class LenientQueryFilterTest {
         return request;
     }
 
-    /** Запрос в том виде, в каком его получает следующее звено цепочки. */
     private static HttpServletRequest passThrough(MockHttpServletRequest request)
             throws ServletException, IOException {
         MockFilterChain chain = new MockFilterChain();

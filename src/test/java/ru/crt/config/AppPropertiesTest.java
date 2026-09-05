@@ -8,11 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import ru.crt.AbstractIntegrationTest;
 
-/**
- * Настройки {@code ct.*} биндятся из yml. Опечатка в имени ключа или пропавший сеттер
- * не ломают старт — приложение просто молча работает на значениях по умолчанию, и
- * заметно это становится в проде (например, лимит запросов, который «не включается»).
- */
+/** Настройки {@code ct.*} биндятся из yml; опечатка в ключе молча оставляет дефолты. */
 class AppPropertiesTest extends AbstractIntegrationTest {
 
     @Autowired

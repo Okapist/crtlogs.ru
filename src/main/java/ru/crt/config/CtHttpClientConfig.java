@@ -25,15 +25,8 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.util.StringUtils;
 
 /**
- * HTTP-клиент для CT-логов и его trust store.
- *
- * <p>Живёт здесь, а не в CtLogClient: клиент отвечает за протокол RFC 6962, а «каким
- * корням мы доверяем» — настройка окружения, как и всё остальное в этом пакете.
- *
- * <p>Если задан {@code ct.trust-cert} (PEM с дополнительными доверенными корнями,
- * например Минцифры), используется trust store «JDK cacerts + эти файлы» — сам JDK
- * не модифицируется. Непригодная настройка не роняет старт: клиент поднимается на
- * стандартном cacerts.
+ * HTTP-клиент CT-логов и его trust store: при {@code ct.trust-cert} — «JDK cacerts
+ * + PEM-файлы»; непригодная настройка не роняет старт, клиент поднимается на cacerts.
  */
 @Configuration
 public class CtHttpClientConfig {
@@ -58,17 +51,11 @@ public class CtHttpClientConfig {
         return builder.build();
     }
 
-    /**
-     * Существующие ресурсы из настройки (через запятую); отсутствующие пропускаем с warn.
-     * Понимает и {@code classpath:} (сертификаты Минцифры лежат внутри jar, чтобы на
-     * сервере ничего не доустанавливать), и обычные пути на диске.
-     */
+    /** Существующие ресурсы из настройки (через запятую); classpath: и пути на диске. */
     static List<Resource> extraTrustResources(String setting, ResourceLoader resources) {
         List<Resource> found = new ArrayList<>();
-        // tokenizeToStringArray сам обрезает пробелы и выкидывает пустые элементы
         for (String location : StringUtils.tokenizeToStringArray(setting, ",")) {
-            // без явной схемы DefaultResourceLoader ищет в classpath, а настройка
-            // исторически задаёт путь на диске — приводим к file: сами
+            // без схемы DefaultResourceLoader ищет в classpath — а настройка задаёт путь на диске
             if (!location.contains(":")) {
                 location = "file:" + location;
             }
@@ -82,11 +69,7 @@ public class CtHttpClientConfig {
         return found;
     }
 
-    /**
-     * SSLContext с якорями «стандартный cacerts JDK + все сертификаты из PEM-файлов»
-     * (нужно и корню, и промежуточному: серверы Минцифры не присылают цепочку целиком).
-     * Пакет-private для unit-теста.
-     */
+    /** SSLContext «cacerts + все сертификаты из PEM»; пакет-private для unit-теста. */
     static SSLContext trustedSslContext(List<Resource> pems) throws IOException, GeneralSecurityException {
         KeyStore anchors = KeyStore.getInstance(KeyStore.getDefaultType());
         Path cacerts = Path.of(System.getProperty("java.home"), "lib", "security", "cacerts");

@@ -12,10 +12,7 @@ import ru.crt.AbstractIntegrationTest;
 import ru.crt.TestFixtures;
 import ru.crt.db.CertificateRepository;
 
-/**
- * Детали сертификата: поля контракта, вхождения в логи и кеш дампа (только дамп и
- * только по отпечатку — почему, см. {@code CacheConfig}).
- */
+/** Детали сертификата: поля контракта, вхождения в логи и кеш дампа. */
 class CertDetailsServiceTest extends AbstractIntegrationTest {
 
     @Test
@@ -52,11 +49,7 @@ class CertDetailsServiceTest extends AbstractIntegrationTest {
                 "новое вхождение должно быть видно сразу, а не через час");
     }
 
-    /**
-     * Страница показывает имя расшифрованным, как и выдача поиска. Дампа это не
-     * касается: он печатает, что записано в сертификате, — а у сертификата Минцифры там
-     * как раз юникод.
-     */
+    /** Страница показывает расшифрованное; дамп печатает как записано. */
     @Test
     void cyrillicIdentifiersAreShownDecodedWhileTheDumpStaysLiteral() throws Exception {
         insertCyrillicCert();
@@ -70,10 +63,7 @@ class CertDetailsServiceTest extends AbstractIntegrationTest {
                 "дамп печатает dNSName так, как он записан в сертификате");
     }
 
-    /**
-     * Дамп кешируется по отпечатку, а не по id: у одного сертификата в разных логах
-     * разные id и один DER, поэтому запись в кеше одна на всех — и синк её не трогает.
-     */
+    /** Кеш по отпечатку: у одного сертификата в разных логах один DER. */
     @Test
     void dumpIsCachedBySha256AndSurvivesInsert() throws Exception {
         CertificateRepository.NewCert original = insertFixture();

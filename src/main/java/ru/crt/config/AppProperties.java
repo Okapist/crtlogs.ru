@@ -3,11 +3,8 @@ package ru.crt.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Настройки {@code ct.*}. Привязываются JavaBeanBinder'ом, поэтому у каждого ключа,
- * который вообще встречается в конфигурации, должен быть сеттер, а поле не может быть
- * final: без сеттера Spring падает на старте с «No setter found for property» — и роняет
- * привязку всего {@code ct.*}, а не одного ключа. Вложенные объекты ({@link RateLimit},
- * {@link Auth}) создаются здесь и привязываются по своим сеттерам, поэтому их поля final.
+ * Настройки {@code ct.*}: JavaBeanBinder требует сеттер у каждого ключа,
+ * поэтому поля не final (вложенные объекты создаются здесь — их поля final).
  */
 @ConfigurationProperties(prefix = "ct")
 public class AppProperties {
@@ -15,14 +12,9 @@ public class AppProperties {
     /** URL log_list_v3 (ctlog.json) со списком российских CT-логов. */
     private String logListUrl = "https://browser-resources.s3.yandex.net/ctlog/ctlog.json";
 
-    /** Сколько записей запрашивать одним get-entries. */
     private int batchSize = 256;
 
-    /**
-     * PEM-файл с дополнительными доверенными сертификатами (например, корень Минцифры)
-     * для HTTPS-клиента CT-логов. JDK не модифицируется: стандартный cacerts
-     * остаётся доверенным, файл лишь добавляет якоря. Пусто — только cacerts.
-     */
+    /** PEM с дополнительными доверенными корнями (например, Минцифры); пусто — только cacerts. */
     private String trustCert = "";
 
     private final RateLimit rateLimit = new RateLimit();
@@ -105,10 +97,7 @@ public class AppProperties {
         /** Пусто => закрытые эндпоинты всегда отвечают 401. Переопределяется CT_AUTH_TOKEN. */
         private String token = "";
 
-        /**
-         * true => тем же токеном закрыт весь сайт, кроме /api/status (почему — см.
-         * {@code AuthTokenFilter.shouldNotFilter}). Так живёт стенд.
-         */
+        /** Тем же токеном закрыт весь сайт, кроме /api/status. Так живёт стенд. */
         private boolean protectAll = false;
 
         public String getToken() {

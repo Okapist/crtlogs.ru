@@ -4,12 +4,7 @@ import ru.crt.db.LogRow;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
-/**
- * Публичный (без токена) статус синхронизации лога для блока под кнопкой поиска.
- * Тексты ошибок не включаются — только факт их наличия; подробности — в /api/logs.
- *
- * <p>Имена полей JSON остаются snake_case: их читает static/logs-status.js.
- */
+/** Публичный статус синка для виджета: без текстов ошибок, только флаг ok. */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record LogPublicStatus(
         String url,

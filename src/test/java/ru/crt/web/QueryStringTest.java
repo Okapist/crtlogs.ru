@@ -7,17 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/**
- * Правила строки запроса: разбор пришедшей и сборка уходящей ссылкой.
- *
- * <p>Разбор здесь проверяется как чистая функция; то, что эти параметры видит дальше
- * поиск и что на живом Jetty адрес с одиночным '%' больше не даёт 400, закрепляет
- * {@link MalformedQueryHttpTest} — MockMvc для этого не годится, он получает уже
- * разобранные параметры и строку запроса не трогает вовсе.
- */
+/** Правила строки запроса: разбор пришедшей и сборка уходящей ссылкой. */
 class QueryStringTest {
 
-    /** То, ради чего всё и написано: '%' сам по себе — обычный символ шаблона LIKE. */
     @Test
     void strayPercentIsAnOrdinaryCharacter() {
         assertEquals("%.com", value("q=%.com"));
@@ -27,7 +19,6 @@ class QueryStringTest {
         assertEquals("%2", value("q=%2"), "escape оборван: цифр не хватает на пару");
     }
 
-    /** Правильно закодированный запрос обязан разбираться ровно как раньше. */
     @Test
     void ordinaryEscapesKeepTheirMeaning() {
         assertEquals("%.com", value("q=%25.com"));
@@ -37,12 +28,7 @@ class QueryStringTest {
         assertEquals("пример.рф", value("q=%D0%BF%D1%80%D0%B8%D0%BC%D0%B5%D1%80.%D1%80%D1%84"));
     }
 
-    /**
-     * Байты, которые в UTF-8 не складываются (одиночный {@code %D1}), — единственный
-     * случай, где ответить исходной строкой нельзя: что имел в виду отправитель,
-     * неизвестно. Важно, что это не отказ: запрос доходит до поиска и просто ничего
-     * не находит, а не превращается в 400 без объяснения.
-     */
+    /** Нераскодируемые байты — U+FFFD, а не отказ: запрос доходит до поиска. */
     @Test
     void undecodableBytesBecomeTheReplacementCharacterInsteadOfAFailure() {
         assertEquals("�.ru", value("q=%D1.ru"));
@@ -60,7 +46,6 @@ class QueryStringTest {
         assertNull(QueryString.parse("q=%.com").get("output"));
     }
 
-    /** Обычный запрос в ссылке остаётся собой — кодировать в нём нечего. */
     @Test
     void readableQueriesAreLeftAlone() {
         assertEquals("example.ru", QueryString.encode("example.ru"));
@@ -71,10 +56,6 @@ class QueryStringTest {
         assertEquals("почта.онлайн", QueryString.encode("почта.онлайн"));
     }
 
-    /**
-     * Кодируется ровно то, что иначе прочитается по-другому: '&' разрезал бы параметр,
-     * '+' стал бы пробелом, '#' — началом якоря, а '%' перед парой цифр — escape'ом.
-     */
     @Test
     void onlyCharactersThatWouldChangeTheMeaningAreEscaped() {
         assertEquals("a%26b", QueryString.encode("a&b"));
@@ -88,12 +69,7 @@ class QueryStringTest {
         assertEquals("%2541%", QueryString.encode("%41%"), "последнему цифр уже не досталось");
     }
 
-    /**
-     * Главное свойство пары: ссылка ведёт туда, откуда её взяли. Проверяется тем же
-     * разбором, которым читается пришедший запрос, — иначе «красиво» могло бы значить
-     * «не находит».
-     *
-     */
+    /** Главное свойство пары: ссылка ведёт туда, откуда её взяли. */
     @Test
     void everyEncodedValueParsesBackToItself() {
         for (String q : AWKWARD_QUERIES) {
@@ -109,21 +85,13 @@ class QueryStringTest {
             "%ab.ru", "%D1%80", "%25.com", "%%41", "%41%", "%%", "%2", "%1", "%G0",
             "abc%", "a%zz", "%", "ü", "😀.рф");
 
-    /**
-     * Собранное значение уходит прямо в атрибут href, поэтому в нём не должно оставаться
-     * ничего, что разметка прочитает по-своему: экранировать его на месте сборки —
-     * значит помнить про это в каждой из пяти ссылок страницы выдачи.
-     */
+    /** Собранное значение уходит в href как есть — экранировать там нечего. */
     @Test
     void encodedValueIsSafeToPutIntoMarkupAsIs() {
-        // перебираем весь ASCII, а не горсть подозрительных символов: расширь кто-нибудь
-        // isUnreserved() (скажем, до sub-delims RFC 3986) — и выборочные значения новую
-        // ветку просто не задели бы, а разметка молча получила бы сырой '&' в href
+        // перебираем весь ASCII: расширь кто-нибудь isUnreserved() — выборочные значения новую ветку не задели бы
         for (int code = 0; code < 128; code++) {
             String q = "a" + (char) code + "b";
             String encoded = QueryString.encode(q);
-            // esc() и есть то, чем экранируется остальная разметка, поэтому спрашиваем
-            // именно его: «в строке нет & " < > '» — это ровно «esc() её не меняет»
             assertEquals(encoded, HtmlView.esc(encoded), "экранировать в '" + encoded + "' нечего");
         }
         for (String q : AWKWARD_QUERIES) {

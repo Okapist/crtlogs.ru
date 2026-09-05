@@ -63,8 +63,6 @@ class AuthTokenFilterTest {
         MockHttpServletResponse response = run(logsRequest("Bearer wrong"));
         assertEquals(401, response.getStatus());
         assertEquals("Bearer", response.getHeader("WWW-Authenticate"));
-        // /api/logs — путь для клиентов API, поэтому здесь ответ остаётся JSON-ом,
-        // и текст называет, чего именно не хватает
         assertTrue(response.getContentType().startsWith("application/json"));
         assertTrue(response.getContentAsString().contains("Authorization: Bearer"));
         assertFalse(passed());
@@ -109,7 +107,6 @@ class AuthTokenFilterTest {
         assertFalse(passed());
     }
 
-    /** Тот же токен принимается как пароль Basic — иначе стенд не открыть браузером. */
     @Test
     void basicCredentialsWithTokenAsPasswordAreAccepted() {
         props.getAuth().setProtectAll(true);
@@ -119,10 +116,7 @@ class AuthTokenFilterTest {
                 + Base64.getEncoder().encodeToString("user:wrong".getBytes()))));
     }
 
-    /**
-     * Заголовок присылает клиент: чего бы он туда ни положил, ответом должен быть 401,
-     * а не 500 из разбора base64.
-     */
+    /** Заголовок присылает клиент: ответ — 401, а не 500 из разбора base64. */
     @Test
     void malformedAuthorizationHeadersAreRejectedWithoutFailing() {
         for (String header : new String[]{
@@ -136,17 +130,12 @@ class AuthTokenFilterTest {
         }
     }
 
-    /** Лишние пробелы вокруг токена — обычное дело у curl и браузерных расширений. */
     @Test
     void bearerTokenIsTrimmed() {
         assertTrue(filter.isAuthorized(logsRequest("Bearer   secret-token  ")));
     }
 
-    /**
-     * Контейнер отдаёт requestURI как есть, а Spring MVC маршрутизирует по
-     * раскодированному пути без matrix-параметров — сравнение сырой строки
-     * пропускало бы эти варианты к незащищённому /api/logs.
-     */
+    /** Сырой requestURI пропускал бы кодированные и matrix-формы мимо токена. */
     @Test
     void encodedAndMatrixFormsOfLogsPathStayProtected() {
         for (String uri : new String[]{"/api/log%73", "/api/logs;v=1", "//api/logs", "/api/logs/"}) {

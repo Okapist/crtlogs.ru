@@ -23,11 +23,8 @@ import java.util.concurrent.TimeoutException;
 import org.springframework.stereotype.Component;
 
 /**
- * HTTP-клиент CT-логов (RFC 6962): ctlog.json (log_list_v3), get-sth, get-entries.
- * Все методы бросают IOException/InterruptedException — вызывающий решает, как обрабатывать.
- *
- * <p>Здесь только протокол: готовый HttpClient (вместе с trust store для корней
- * Минцифры) собирает {@code ru.crt.config.CtHttpClientConfig}.
+ * HTTP-клиент CT-логов (RFC 6962): ctlog.json, get-sth, get-entries.
+ * Только протокол; HttpClient с trust store собирает CtHttpClientConfig.
  */
 @Component
 public class CtLogClient {
@@ -40,12 +37,7 @@ public class CtLogClient {
         this.http = ctHttpClient;
     }
 
-    // --- DTO ответов логов ---
-    // Неизвестные поля Jackson 3 игнорирует по умолчанию (в 2.x было наоборот),
-    // поэтому @JsonIgnoreProperties на этих record'ах не нужен. Имена полей в
-    // протоколе — snake_case, поэтому у record'ов с camelCase-компонентами стоит
-    // @JsonNaming: он на самом record'е, а не на общем ObjectMapper'е, чтобы разбор
-    // RFC 6962 не зависел от того, каким маппером вызвали клиент.
+    // --- DTO ответов логов; snake_case протокола связывает @JsonNaming на record'ах ---
 
     public record LogListDoc(List<OperatorDoc> operators) {
     }
@@ -111,21 +103,12 @@ public class CtLogClient {
 
     // --- низкоуровневый HTTP ---
 
-    /**
-     * Предел на размер ответа лога. Тело приходит от третьей стороны (список операторов
-     * тянется с внешнего адреса и включает чужие логи)
-     * Пачка get-entries на 256 записей — это единицы мегабайт, так что запас пятикратный.
-     */
+    /** Тело приходит от третьей стороны; пачка на 256 записей — единицы мегабайт. */
     private static final int MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
-    /** Ожидание заголовков ответа. */
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(30);
 
-    /**
-     * Предел на весь обмен, включая чтение тела. {@link HttpRequest#timeout} закрывает
-     * только ожидание заголовков, поэтому лог, отдавший заголовки и замолчавший на теле,
-     * блокировал поток синхронизации навсегда — а вместе с ним и все следующие проходы.
-     */
+    /** Предел на весь обмен: HttpRequest.timeout закрывает только ожидание заголовков. */
     private static final Duration EXCHANGE_TIMEOUT = Duration.ofSeconds(90);
 
     private static String ctUrl(String baseUrl, String path) {
@@ -138,8 +121,6 @@ public class CtLogClient {
                 .header("Accept", "application/json")
                 .GET()
                 .build();
-        // sendAsync, а не send: тело читают потоки самого HttpClient, поэтому дедлайн
-        // на future ограничивает обмен целиком, а не только ожидание заголовков
         CompletableFuture<HttpResponse<byte[]>> exchange =
                 http.sendAsync(request, _ -> new LimitedBody(MAX_RESPONSE_BYTES, url));
         HttpResponse<byte[]> response;
@@ -158,12 +139,7 @@ public class CtLogClient {
         return response.body();
     }
 
-    /**
-     * Тело ответа в массив байт, но не длиннее предела: как только пришло больше,
-     * подписка отменяется, накопленное отпускается и обмен падает ошибкой. Штатный
-     * {@code ofByteArray} читает столько, сколько пришлют, — поэтому он здесь только
-     * копит и склеивает куски, а считает их этот класс.
-     */
+    /** Тело не длиннее предела: при превышении подписка отменяется и обмен падает ошибкой. */
     static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
 
         private final HttpResponse.BodySubscriber<byte[]> body = HttpResponse.BodySubscribers.ofByteArray();
@@ -200,7 +176,6 @@ public class CtLogClient {
             if (size > limit) {
                 overflowed = true;
                 subscription.cancel();
-                // onError отпускает накопленное у ofByteArray до сборки массива
                 body.onError(new IOException("ответ длиннее " + limit + " байт: " + url));
                 return;
             }

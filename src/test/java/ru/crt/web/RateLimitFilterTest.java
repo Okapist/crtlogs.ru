@@ -72,19 +72,13 @@ class RateLimitFilterTest {
         filter.doFilter(request, response, chain);
         assertEquals(429, response.getStatus());
         assertEquals("1", response.getHeader("Retry-After"));
-        // в лимит упирается живой посетитель, поэтому и ответ ему — страница с
-        // объяснением, а не строка JSON в пустом окне браузера
+        // в лимит упирается живой посетитель — ответ ему страница
         assertTrue(response.getContentType().startsWith("text/html"));
         assertTrue(response.getContentAsString().contains("Слишком много запросов"));
         assertNull(chain.getRequest()); // до контроллера не дошло
     }
 
-    /**
-     * Инвариант заголовка описан в javadoc RateLimitFilter.clientIp и здесь только
-     * закрепляется: клиентским считается последний элемент, потому что его проставил
-     * ближайший прокси — наш. Всё, что прислал сам посетитель, оказывается левее и
-     * на выбор не влияет, поэтому лимит нельзя обойти своим X-Forwarded-For.
-     */
+    /** Клиентский — последний элемент X-Forwarded-For: его проставил наш прокси; первым лимит обходился бы. */
     @Test
     void forwardedForTakesTheHopAddedByOurProxy() {
         props.getRateLimit().setTrustForwarded(true);
@@ -98,7 +92,6 @@ class RateLimitFilterTest {
         assertEquals("127.0.0.1", filter.clientIp(untrusted), "без trust-forwarded заголовок игнорируется");
     }
 
-    /** Лимитируются api и запросы crt.sh-контракта; статика и голый корень — нет. */
     @Test
     void onlyApiAndSearchLikeRequestsAreLimited() {
         assertTrue(filter.shouldNotFilter(request("/")), "страница без параметров — это статика");
@@ -122,18 +115,13 @@ class RateLimitFilterTest {
         assertTrue(filter.shouldNotFilter(request("/api/certs/1")));
     }
 
-    /**
-     * Виджет статуса опрашивает api/status сам, с каждой открытой страницы, поэтому в
-     * общем бюджете обычное хождение по сайту упиралось в лимит: главная, поиск и
-     * открытие сертификата — это уже четыре запроса при burst=3.
-     */
+    /** Виджет опрашивает /api/status сам — хождение по сайту не должно упираться в лимит. */
     @Test
     void publicStatusIsNotLimitedBecauseThePagesPollItThemselves() {
         assertTrue(filter.shouldNotFilter(request("/api/status")));
         assertTrue(filter.shouldNotFilter(request("/api/status/")), "нормализованный путь — тот же");
     }
 
-    /** Пустой последний элемент X-Forwarded-For не должен становиться ключом бакета. */
     @Test
     void emptyForwardedHopFallsBackToTheSocketAddress() {
         props.getRateLimit().setTrustForwarded(true);
@@ -146,7 +134,6 @@ class RateLimitFilterTest {
         assertEquals("127.0.0.1", filter.clientIp(blank));
     }
 
-    /** Забирает все токены бакета: дальше он пропустит запрос только после долива. */
     private void drainBurst(String ip, long nowNanos) {
         for (int i = 0; i < props.getRateLimit().getBurst(); i++) {
             assertTrue(filter.tryAcquire(ip, nowNanos + i), "burst должен быть полным на старте");

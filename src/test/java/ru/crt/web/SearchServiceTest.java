@@ -11,14 +11,13 @@ import ru.crt.db.SortColumn;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Внешний вид выдачи и порядок обращений к хранилищу: счётчик, окно страницы, строки. */
+/** Внешний вид выдачи и порядок обращений к хранилищу. */
 class SearchServiceTest extends AbstractIntegrationTest {
 
     private SearchPage search(String q) {
         return searchService.search(SearchQuery.of(q, null, null, null, null));
     }
 
-    /** Строка выдачи в контракте crt.sh: CN, идентификаторы, даты и общее число совпадений. */
     @Test
     void rowCarriesCrtShFieldsBuiltFromTheStoredCertificate() throws Exception {
         insertFixture();
@@ -37,7 +36,6 @@ class SearchServiceTest extends AbstractIntegrationTest {
         assertEquals(1, row.resultCount(), "result_count — общее число совпадений, а не размер страницы");
     }
 
-    /** Умолчания crt.sh: Logged At по убыванию, первая страница, истёкшие показываем. */
     @Test
     void defaultsMatchCrtShWhenParametersAreAbsent() {
         SearchQuery query = SearchQuery.of("example.ru", null, null, null, null);
@@ -53,11 +51,7 @@ class SearchServiceTest extends AbstractIntegrationTest {
         assertTrue(SearchQuery.of("q", "expired", null, null, null).excludeExpired());
     }
 
-    /**
-     * Проверка запроса стоит перед обращением к БД и одна на все входы: раньше она
-     * жила в обработчике, и второй вход в поиск дошёл бы до полного сканирования
-     * cert_domain молча.
-     */
+    /** Проверка стоит перед обращением к БД и одна на все входы. */
     @Test
     void blankAndTooBroadQueriesAreRejectedWith400() {
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ResponseStatusException.class,
@@ -68,7 +62,6 @@ class SearchServiceTest extends AbstractIntegrationTest {
                 () -> search("%_%")).getStatusCode());
     }
 
-    /** Границы той же проверки: что считается «слишком общим», а что — нет. */
     @Test
     void tooBroadPatternBoundaries() {
         assertTrue(SearchService.isTooBroadcast("%"), "один процент — это вся база");
@@ -80,7 +73,6 @@ class SearchServiceTest extends AbstractIntegrationTest {
         assertFalse(SearchService.isTooBroadcast("a"), "не шаблон — длина не важна");
     }
 
-    /** Смещение зажимается по числу совпадений, иначе OFFSET уезжал бы за конец выборки. */
     @Test
     void pageBeyondTheLastOneIsEmptyButStillReportsTheTotal() throws Exception {
         insertFixture();
@@ -101,10 +93,7 @@ class SearchServiceTest extends AbstractIntegrationTest {
 
     // --- кириллические домены ---
 
-    /**
-     * Кириллическое имя приезжает в логи в двух формах, и набрать его посетитель может
-     * тоже в любой: и запрос, и индекс сводятся к одной ({@code DomainName}).
-     */
+    /** И запрос, и индекс сводятся к одной форме — в любой записи имени. */
     @Test
     void cyrillicNamesAreFoundWhicheverFormIsTyped() throws Exception {
         insertCyrillicCert();
@@ -116,12 +105,7 @@ class SearchServiceTest extends AbstractIntegrationTest {
         assertEquals(0, search("%.ru").total(), "зона не путается с соседней");
     }
 
-    /**
-     * Регрессия, ради которой индекс и держит расшифрованные имена: подстановочный знак
-     * обязан резать кириллический ярлык так же, как латинский (на punycode-индексе это
-     * было невозможно, см. {@code DomainNameTest}). Здесь то же свойство сквозь БД.
-     * Домены кладутся сразу в индексной форме — в ней их отдаёт {@code CertificateNames}.
-     */
+    /** Регрессия ради юникод-индекса: знак режет кириллический ярлык как латинский. */
     @Test
     void aWildcardCutsACyrillicLabelJustLikeALatinOne() throws Exception {
         repository.insertCertificates(List.of(withDomains(fixtureCerts().getFirst(), 402, "f2",
@@ -135,10 +119,6 @@ class SearchServiceTest extends AbstractIntegrationTest {
                 search("%троят.рф").rows().getFirst().nameValue());
     }
 
-    /**
-     * Показывается расшифровка, а не то, что лежит в индексе: {@code xn--80aeiunabfe8a}
-     * читателю не говорит ничего.
-     */
     @Test
     void cyrillicNamesAreShownDecoded() throws Exception {
         insertCyrillicCert();
@@ -148,11 +128,7 @@ class SearchServiceTest extends AbstractIntegrationTest {
         assertEquals(TestFixtures.CYRILLIC_DOMAIN, row.commonName(), "и CN тоже");
     }
 
-    /**
-     * Расшифровка не безусловна: {@code xn--pple-43d} — это {@code аpple} с кириллической
-     * «а», от {@code apple} на глаз неотличимое. Такое имя показывается как записано.
-     * Домены кладутся напрямую — сертификата с подделкой в фикстурах нет.
-     */
+    /** {@code xn--pple-43d} — аpple с кириллической «а»: показывается как записано. */
     @Test
     void namesThatMixCyrillicWithLatinAreShownAsTheyAreWritten() throws Exception {
         repository.insertCertificates(List.of(withDomains(fixtureCerts().getFirst(), 401, "f1",

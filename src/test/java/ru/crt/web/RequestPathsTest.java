@@ -5,12 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
-/**
- * Нормализация пути запроса. По спецификации контейнер отдаёт getRequestURI() как есть,
- * поэтому сравнение сырой строки с {@code /api/logs} обходится кодированием, matrix-
- * параметрами и лишними слэшами. Что именно из этого нельзя пропустить мимо токена,
- * проверяет AuthTokenFilterTest; здесь — сама нормализация.
- */
+/** Нормализация пути запроса: сырой requestURI обходится кодированием, matrix-параметрами и лишними слэшами. */
 class RequestPathsTest {
 
     private static String normalized(String uri) {

@@ -5,12 +5,7 @@ import java.util.List;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
-/**
- * JSON-детали сертификата для UI: {@code GET /api/certs/{id}}.
- *
- * <p>Имена полей — как у {@link SearchRow}; единственное, которое из имени поля не
- * выводится, закреплено {@link JsonProperty}.
- */
+/** JSON-детали сертификата для UI: {@code GET /api/certs/{id}}; поля — как у {@link SearchRow}. */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record CertDetails(
         long id,

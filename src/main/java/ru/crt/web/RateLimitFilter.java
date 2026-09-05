@@ -16,27 +16,20 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import ru.crt.config.AppProperties;
 
 /**
- * Token bucket на IP: средний темп ct.rate-limit.rps, короткий burst ct.rate-limit.burst.
- * Лимитируются /api/** и поисковые/download-запросы crt.sh-контракта (/, параметры q/d/id);
- * статика без параметров и публичный статус синка не лимитируются.
+ * Token bucket на IP: средний темп ct.rate-limit.rps, burst ct.rate-limit.burst.
+ * Лимитируются /api/** и поисковые/download-запросы crt.sh-контракта; статика и
+ * /api/status — нет.
  */
 @Component
 @Order(1)
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    /**
-     * Параметры запроса, по которым корень отличается от статики: это crt.sh-контракт
-     * поиска и скачивания. Списком, а не тремя проверками подряд, — тот же список
-     * перебирает закрепляющий это правило тест.
-     */
+    /** Параметры, по которым корень отличается от статики: crt.sh-контракт поиска. */
     private static final String[] DATA_PARAMS = {"q", "d", "id"};
 
     private final AppProperties props;
 
-    /**
-     * Бакеты по одному на IP. Простаивающие выселяет сам Caffeine: без этого карта росла
-     * бы всё время работы демона — за сутки это все IP, которые к нам приходили.
-     */
+    /** Простаивающие бакеты выселяет Caffeine — иначе карта росла бы всё время работы. */
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(1))
             .build();
@@ -55,11 +48,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return true;
         }
         String path = RequestPaths.normalized(request);
-        // Виджет статуса висит на каждой странице и опрашивает /api/status сам, поэтому
-        // в общем бюджете обычное поведение посетителя упиралось в лимит: загрузка
-        // главной, поиск и открытие сертификата — это уже четыре запроса при burst=3.
-        // По цене эндпоинт сопоставим со статикой (несколько строк ct_log), и ответ
-        // кешируется на 15 секунд — см. ApiController.publicStatus
+        // виджет опрашивает /api/status сам с каждой страницы — без исключения обычное
+        // хождение по сайту упиралось бы в лимит
         if (RequestPaths.STATUS.equals(path)) {
             return true;
         }
@@ -84,26 +74,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
         } else {
             response.setHeader("Retry-After", "1");
-            // 429 числом: в jakarta.servlet константы кончаются на кодах HTTP/1.1
             ErrorReply.write(request, response, 429,
                     "Слишком много запросов: подождите секунду и повторите.");
         }
     }
 
     /**
-     * IP клиента — и единственное место, где записан инвариант X-Forwarded-For;
-     * остальные файлы на него ссылаются, а не пересказывают его своими словами.
-     *
-     * <p>При trust-forwarded берём ПОСЛЕДНИЙ элемент заголовка. Последний элемент
-     * всегда проставлен ближайшим прокси, то есть нашим: что бы ни прислал клиент,
-     * его значения оказываются левее. Поэтому правило одинаково верно и когда прокси
-     * перезаписывает заголовок целиком (так настроен наш Caddy), и когда дописывает
-     * себя в конец. Небезопасен ровно противоположный выбор — первый элемент: его
-     * присылает сам клиент, и лимит по IP обходился бы произвольным заголовком.
-     *
-     * <p>Предполагается ровно один доверенный прокси непосредственно перед приложением
-     * (см. deploy/Caddyfile); при двух вложенных прокси последним окажется внутренний,
-     * и лимит станет общим — тогда правило придётся пересматривать.
+     * При trust-forwarded клиентский IP — ПОСЛЕДНИЙ элемент X-Forwarded-For: его
+     * проставил ближайший прокси, то есть наш. Первый небезопасен — его присылает
+     * сам клиент, и лимит обходился бы произвольным заголовком.
      */
     String clientIp(HttpServletRequest request) {
         if (props.getRateLimit().isTrustForwarded()) {

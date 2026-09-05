@@ -25,11 +25,7 @@ class CertificateNamesTest {
                 "порядок записи SAN сохраняется");
     }
 
-    /**
-     * Регрессия: кириллический dNSName — почему SAN разбирается своими силами, см.
-     * CertificateNames. В индекс он едет в единой форме (DomainName), и CN с dNSName,
-     * записанные одинаково, дают один идентификатор, а не два.
-     */
+    /** Регрессия: кириллический dNSName, ради которой SAN разбирается своими силами. */
     @Test
     void cyrillicDnsNameIsDecodedAsUtf8AndIndexedInOneForm() throws Exception {
         X509Certificate cert = TestFixtures.pemCertificate(TestFixtures.CYRILLIC_CERT);
@@ -40,12 +36,7 @@ class CertificateNamesTest {
                 "иначе JDK уже читает такие имена сам и тест перестал что-либо значить");
     }
 
-    /**
-     * Границей списка служит конец SEQUENCE, а не конец буфера: хвост за ним в SAN не
-     * входит, и считать его ещё одним именем значило бы приписывать сертификату
-     * идентификаторы, которых в нём нет, — а байты приходят от того, кто подал
-     * сертификат в публичный лог.
-     */
+    /** Граница списка — конец SEQUENCE, а не конца буфера. */
     @Test
     void generalNamesStopAtTheEndOfTheirSequence() {
         byte[] withTrailingName = {
@@ -59,11 +50,7 @@ class CertificateNamesTest {
         assertEquals("a.ru", names.getFirst().text());
     }
 
-    /**
-     * Та же граница с другой стороны: длина имени вылезает за SEQUENCE. Такого имени
-     * нет вовсе — иначе подавший сертификат дописывал бы к нему байты, лежащие за
-     * списком, и они попадали бы и в дамп, и в индекс доменов.
-     */
+    /** Длина имени, вылезающая за SEQUENCE, — такого имени нет вовсе. */
     @Test
     void namesThatOverrunTheirSequenceAreNotRead() {
         byte[] overrunning = {
@@ -73,7 +60,6 @@ class CertificateNamesTest {
         assertEquals(List.of(), CertificateNames.generalNames(overrunning));
     }
 
-    /** Имя печатается тегом и содержимым, а не ссылкой на буфер: сообщение упавшего теста должно читаться. */
     @Test
     void namesAreReadableInReports() {
         byte[] san = {0x30, 0x06, (byte) 0x82, 0x04, 'a', '.', 'r', 'u'};
@@ -83,11 +69,6 @@ class CertificateNamesTest {
         assertEquals("GeneralName[tag=0x82, a.ru]", name.toString());
     }
 
-    /**
-     * В индекс идёт только то, что может быть доменом. Проверки, которые делал за нас
-     * JDK, вместе с его разбором потеряны, а cert_domain.domain — VARCHAR(255): имя,
-     * которое туда не влезает, БД отвергает, и синк пропускает сертификат целиком.
-     */
     @Test
     void onlyPlausibleDomainsGoIntoTheIndex() {
         assertTrue(CertificateNames.indexable("*.кот.рф"), "кириллица — ровно то, ради чего свой разбор");
@@ -97,7 +78,7 @@ class CertificateNamesTest {
         assertFalse(CertificateNames.indexable(" "));
     }
 
-    /** Нечитаемый список — это null, а не пустой: вызывающий тогда покажет hex. */
+    /** Нечитаемый список — это null, а не пустой: вызывающий покажет hex. */
     @Test
     void unreadableGeneralNamesAreNotGuessed() {
         assertNull(CertificateNames.generalNames(null), "расширения нет");
@@ -107,7 +88,6 @@ class CertificateNamesTest {
                 "SEQUENCE обещает 127 байт, есть 1");
     }
 
-    /** Обрезанное имя внутри списка обрывает разбор: отдаём прочитанное, а не остаток наугад. */
     @Test
     void truncatedNameEndsTheList() {
         List<CertificateNames.GeneralName> names = CertificateNames.generalNames(new byte[]{

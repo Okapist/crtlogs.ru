@@ -7,19 +7,9 @@ import org.springframework.web.util.HtmlUtils;
 import ru.crt.db.SortColumn;
 
 /**
- * Серверный рендер всех трёх страниц (главная, поиск, сертификат) в стиле crt.sh.
- * Без шаблонизатора — только экранирование и простая разметка. Общий каркас (шапка,
- * копирайт, счётчик) собирает {@link #page}, чтобы строка бренда правилась в одном месте.
- *
- * <p>Все ссылки относительные ({@code ?id=42}, {@code site.css}, {@code ./}), а не
- * корневые. Это нужно стенду: он живёт под префиксом /testing/, и корневая ссылка
- * увела бы посетителя стенда на прод. Браузер разрешает такие ссылки относительно
- * каталога текущего документа, поэтому одна и та же разметка работает и в корне,
- * и под любым префиксом.
- *
- * <p>Числа подставляются через {@code %s}, а не {@code %d}: {@code formatted} берёт
- * локаль по умолчанию, и под локалью с не-латинской системой счисления id сертификата
- * ушёл бы в разметку деванагари, ломая заодно и ссылку.
+ * Серверный рендер всех трёх страниц в стиле crt.sh, без шаблонизатора. Все ссылки
+ * относительные — стенд живёт под префиксом /testing/; числа подставляются через
+ * {@code %s}, а не {@code %d} (formatted берёт локаль по умолчанию).
  */
 final class HtmlView {
 
@@ -29,10 +19,6 @@ final class HtmlView {
     private HtmlView() {
     }
 
-    /**
-     * Общая шапка: шрифты и общий CSS. Правила бренда лежат в static/site.css рядом
-     * с логами-виджетом — так их видят все три страницы.
-     */
     private static final String HEAD_LINKS = """
             <LINK href="//fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,700&family=Urbanist:wght@700&family=Roboto+Mono&display=swap" rel="stylesheet">
             <LINK href="site.css" rel="stylesheet">
@@ -55,22 +41,15 @@ final class HtmlView {
             """ + COPYRIGHT + "<SCRIPT src=\"logs-status.js\"></SCRIPT>\n";
 
     /**
-     * Каркас страницы. {@code headerExtras} — то, что висит справа в шапке (есть только
-     * у выдачи), {@code head} — стили конкретной страницы, {@code body} — всё между
-     * шапкой и счётчиком, включая копирайт: у страницы сертификата он идёт после
-     * таблицы, а у остальных — после блока статуса логов.
+     * Каркас страницы: {@code headerExtras} — справа в шапке, {@code head} — стили,
+     * {@code body} — всё до счётчика, включая копирайт.
      */
     private static String page(String title, String heading, String headerExtras,
                                String head, String body) {
         return page(title, heading, headerExtras, head, body, "");
     }
 
-    /**
-     * То же, но с хвостом после счётчика. Единственный его постоялец — readable-url.js, и
-     * место у него именно здесь, а не в теле: он меняет {@code location.href}, а
-     * metrika.js читает его при инициализации. Встань он раньше — счётчик получал бы уже
-     * переписанный адрес.
-     */
+    /** То же с хвостом после счётчика: readable-url.js должен стоять после metrika.js — иначе счётчик прочитает уже переписанный адрес. */
     private static String page(String title, String heading, String headerExtras,
                                String head, String body, String afterMetrika) {
         return """
@@ -141,15 +120,9 @@ final class HtmlView {
             </STYLE>
             """;
 
-    /**
-     * Форма поиска. Значение поля и состояние чекбокса — параметрами: страница отказа
-     * показывает ту же форму с исходным запросом и фильтром, чтобы запрос можно было
-     * поправить, а не набирать заново (и не потерять «только действующие»).
-     */
+    /** Форма поиска; значение и чекбокс — параметрами: страница отказа показывает её же с исходным запросом. */
     private static String searchForm(String q, boolean excludeExpired) {
         return """
-                  <!-- обычный GET-submit: результаты рисует сервер (resultsPage), поэтому -->
-                  <!-- прямая ссылка, F5 и «назад» работают без отдельной клиентской ветки -->
                   <FORM id="searchForm" action="./" method="get">
                     <INPUT class="input" type="text" name="q" required autofocus autocomplete="off"
                            value="%s" placeholder="домен, например example.ru">
@@ -171,26 +144,13 @@ final class HtmlView {
 
     private static final String INDEX_BODY = searchForm("", false) + "\n" + HINT + LOGS_WIDGET;
 
-    /**
-     * Начало любой ссылки страницы: сам запрос и фильтр действующих. Запрос приходит уже
-     * закодированным — {@link QueryString#encode} на страницу зовётся один раз, а не по
-     * разу на ссылку. Адрес относительный и без «./»: так его понимают и корень, и стенд
-     * под префиксом /testing/, куда «./» с пути без слэша увело бы мимо.
-     */
+    /** Начало любой ссылки: запрос и фильтр; относительно и без «./» — работает и в корне, и на стенде. */
     private static String searchUrl(String encodedQuery, boolean excludeExpired) {
         return "?q=" + encodedQuery
                 + (excludeExpired ? "&amp;exclude=" + SearchQuery.EXCLUDE_EXPIRED : "");
     }
 
-    /**
-     * Сортировка и направление, если они отличаются от умолчаний. Умолчания опускаются
-     * не ради красоты: этот же хвост уходит в строку браузера (см. readable-url.js), и с
-     * ними обычный {@code ?q=example.ru} превращался бы там в {@code ?q=example.ru&sort=1}.
-     * Ссылкам это ничем не мешает — не названный параметр сервер понимает так же.
-     *
-     * <p>Явно называет сортировку только заголовок колонки ({@link #sortHeader}) — он её
-     * не сохраняет, а задаёт.
-     */
+    /** Сортировка и направление, если отличаются от умолчаний — иначе readable-url.js таскал бы их в адрес. */
     private static String sortSuffix(SearchQuery query) {
         return (query.sort() == SortColumn.DEFAULT ? "" : "&amp;sort=" + query.sort().index())
                 + (query.hasDefaultDirection() ? ""
@@ -198,29 +158,16 @@ final class HtmlView {
     }
 
     /**
-     * Скрипт, переписывающий адрес в строке браузера на читаемый (readable-url.js).
-     * Ставится после счётчика — почему именно там, сказано у {@link #page}.
-     *
-     * <p>Зачем это нужно: ссылки страниц собираются читаемыми сервером, но адрес, по
-     * которому посетитель сюда попал, читаемым быть не обязан — форма кодирует '%' как
-     * %25, да и ссылку можно набрать руками или достать из закладок. Готовый адрес
-     * приходит атрибутом, поэтому правило кодирования остаётся в одном месте, на
-     * сервере; без JavaScript просто ничего не происходит.
-     *
-     * <p>Вторым атрибутом уезжает список параметров, которые этим адресом описаны
-     * ({@link SearchQuery#PARAMETERS}): всё, чего в нём нет, скрипт переносит как есть,
-     * иначе переписывание молча выкидывало бы из адреса чужие метки (utm, yclid).
+     * Скрипт, переписывающий адрес в строке браузера на читаемый. Готовый адрес приходит
+     * атрибутом; всё, чего нет в {@link SearchQuery#PARAMETERS}, переносится как есть
+     * (иначе переписывание выкидывало бы чужие метки — utm, yclid).
      */
     private static String readableUrlScript(String url) {
         return "  <SCRIPT src=\"readable-url.js\" data-url=\"%s\" data-keep=\"%s\"></SCRIPT>\n"
                 .formatted(url, String.join(",", SearchQuery.PARAMETERS));
     }
 
-    /**
-     * Главная целиком — константа: страница ни от чего не зависит, а собиралась заново
-     * на каждый заход в корень (самый частый HTML-запрос сайта), давая по три копии
-     * одних и тех же нескольких килобайт.
-     */
+    /** Главная — константа: собиралась бы заново на каждый заход в корень, самый частый HTML-запрос. */
     private static final String INDEX_PAGE = page("crtlogs.ru | Certificate Search",
             "Certificate Search", "", INDEX_STYLE, INDEX_BODY);
 
@@ -248,20 +195,12 @@ final class HtmlView {
             """;
 
     /**
-     * Та же главная, но с объяснением, что пошло не так, и с сохранённым в форме
-     * запросом: отказ правится на месте, а не после возврата «назад».
-     *
-     * <p>Отдельной страницы ошибки нет намеренно. Всё, что нужно посетителю после
-     * отказа, — прочитать причину и повторить поиск, а это ровно главная; своя страница
-     * добавила бы второй макет с той же формой и лишний переход. Показать причину при
-     * этом обязательно: {@code ResponseStatusException} сам по себе доезжает до браузера
-     * страницей Spring'а без текста ({@code server.error.include-message=never}), то есть
-     * голым кодом 400, — а текст здесь и есть инструкция, что поправить в запросе.
+     * Та же главная с объяснением, что пошло не так, и сохранённым в форме запросом:
+     * отказ правится на месте. Причина обязательна текстом — голый код 400 ничего
+     * не говорит.
      */
     static String indexPage(String message, String q, boolean excludeExpired) {
-        // адрес здесь не переписываем: сюда приходят и 404, и 429, а по одному лишь q
-        // восстановить, на какой странице и сортировке посетителя отбили, нельзя —
-        // переписав адрес, мы бы у него эту страницу и отняли
+        // адрес здесь не переписываем: по одному лишь q не восстановить, откуда посетителя отбили
         String body = "  <DIV id=\"error\">" + esc(message) + "</DIV>\n\n"
                 + searchForm(q, excludeExpired) + "\n" + HINT + LOGS_WIDGET;
         return page("crtlogs.ru | Certificate Search", "Certificate Search", "", ERROR_STYLE, body);
@@ -303,11 +242,7 @@ final class HtmlView {
             </STYLE>
             """;
 
-    /**
-     * Колонки таблицы Certificates в порядке показа; {@code sort} = null у тех, по
-     * которым не сортируют. Списком, а не семью ячейками в шаблоне: добавить или
-     * переставить колонку — одна правка, а не две несовпадающие по порядку.
-     */
+    /** Колонки таблицы Certificates в порядке показа; {@code sort} = null у несортируемых. */
     private record Column(SortColumn sort, String label, boolean nowrap) {
     }
 
@@ -320,14 +255,8 @@ final class HtmlView {
             new Column(null, "Matching Identities", false),
             new Column(SortColumn.ISSUER, "Issuer Name", false));
 
-    /**
-     * Страница результатов поиска — точный макет crt.sh (?q=...): шапка Identity Search,
-     * Criteria-таблица, таблица Certificates с сортируемыми колонками и пейджер.
-     */
+    /** Страница результатов — точный макет crt.sh: Criteria, таблица Certificates, пейджер. */
     static String resultsPage(SearchQuery query, SearchPage results) {
-        // адрес собирается читаемым: '%' шаблона и кириллица остаются как есть, см.
-        // QueryString.encode. Экранировать результат не нужно — ни '&', ни кавычек в нём
-        // по построению нет
         String encQ = QueryString.encode(query.q());
         String base = searchUrl(encQ, query.excludeExpired());
         StringBuilder trs = new StringBuilder(results.rows().size() * 512);
@@ -354,8 +283,7 @@ final class HtmlView {
             trs.append("<TR><TD colspan=\"7\">No certificates found.</TD></TR>\n");
         }
         String sortDir = sortSuffix(query);
-        // текущий поиск целиком, одной строкой на всех: ссылку на JSON, адрес в строке
-        // браузера и (без страницы) пейджер — иначе адрес расходился бы со ссылками
+        // текущий поиск одной строкой: ссылка на JSON, адрес браузера и пейджер
         String current = base + sortDir + (query.page() > 1 ? "&amp;p=" + query.page() : "");
         String headerExtras = """
 
@@ -366,8 +294,7 @@ final class HtmlView {
                       <A class="header-link" href="%s">%s</A>
                     </DIV>
                 """.formatted(current, JSON_ICON,
-                // переключатель ведёт к обратному значению фильтра, а не к текущему.
-                // Сортировку он сохраняет, а страницу сбрасывает — выборка меняет размер
+                // переключатель ведёт к обратному значению фильтра; сортировку сохраняет, страницу сбрасывает
                 searchUrl(encQ, !query.excludeExpired()) + sortDir,
                 query.excludeExpired() ? "Include Expired" : "Exclude Expired");
         String body = """
@@ -434,14 +361,9 @@ final class HtmlView {
         return sb.toString();
     }
 
-    /**
-     * Заголовок сортируемой колонки: ссылка flip-направления + стрелка у активной,
-     * как crt.sh. Номер колонки берётся из {@link SortColumn}, а не пишется литералом
-     * рядом с подписью: иначе заголовок и SQL могли бы разъехаться молча.
-     */
+    /** Заголовок сортируемой колонки: ссылка flip-направления + стрелка у активной. */
     private static String sortHeader(SortColumn column, String label, SearchQuery query, String base) {
         boolean isActive = column == query.sort();
-        // неактивная колонка — предлагаем сортировку по убыванию; активная — переворачиваем
         String dir = isActive && query.descending() ? "&amp;dir=asc" : "";
         String arrow = isActive ? (query.descending() ? " &#8679;" : " &#8681;") : "";
         return "<A href=\"" + base + "&amp;sort=" + column.index() + dir + "\">" + label + "</A>" + arrow;
@@ -487,7 +409,6 @@ final class HtmlView {
     static String certPage(CertDetails d) {
         StringBuilder ct = new StringBuilder();
         for (CertDetails.LogOccurrence o : d.occurrences()) {
-            // operator без запасного "" — esc() уже отдаёт "" на null
             String name = o.description() != null ? o.description() : o.logUrl();
             ct.append("""
                     <TR>
@@ -569,9 +490,8 @@ final class HtmlView {
     // --- вспомогательное ---
 
     /**
-     * HTML-экранирование. Кодировку передаём явно: однопараметрический htmlEscape
-     * работает как ISO-8859-1 и превратил бы кириллицу в числовые сущности.
-     * Пакет-private для unit-теста, который это и закрепляет.
+     * HTML-экранирование; кодировку передаём явно — однопараметрический htmlEscape
+     * работает как ISO-8859-1 и превращает кириллицу в числовые сущности.
      */
     static String esc(String s) {
         return s == null ? "" : HtmlUtils.htmlEscape(s, "UTF-8");

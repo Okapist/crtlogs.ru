@@ -46,11 +46,8 @@ public class CertificateRepository {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     /**
-     * Кеш issuer DN -> ca.id. Пополняется только строками, которые уже зафиксированы:
-     * id из откатившейся транзакции указывал бы на несуществующую строку, и все
-     * следующие пачки этого издателя падали бы на внешнем ключе certificate.issuer_ca_id.
-     *
-     * <p>Живёт в общем CacheManager.
+     * Кеш issuer DN -> ca.id; попадают только зафиксированные id — из откатившейся
+     * транзакции id указывал бы на несуществующую строку.
      */
     private final Cache caIds;
 
@@ -112,9 +109,7 @@ public class CertificateRepository {
         updateLogState(url, treeSize, lastIndex, null);
     }
 
-    /**
-     * Лог отвалился: запоминаем ошибку, не трогая прогресс и tree_size — иначе лог перекачивал бы уже загруженное.
-     */
+    /** Лог отвалился: ошибка запоминается, прогресс и tree_size не трогаются. */
     public void markFailed(String url, String error) {
         updateLogState(url, null, null, error);
     }
@@ -123,7 +118,7 @@ public class CertificateRepository {
         if (error != null && error.length() > MAX_ERROR_LENGTH) {
             error = error.substring(0, MAX_ERROR_LENGTH);
         }
-        // updated_at пишем тем же UTC-локальным временем, что и остальные даты
+        // updated_at — тем же UTC-локальным временем, что и остальные даты
         jdbc.update("""
                 UPDATE ct_log SET tree_size = COALESCE(?, tree_size),
                                   last_synced_index = COALESCE(?, last_synced_index),
@@ -149,13 +144,9 @@ public class CertificateRepository {
     // --- вставка (синк) ---
 
     /**
-     * Вставка пачки записей лога. Быстрый путь — одна транзакция на всю пачку; если БД
-     * отвергла пачку из-за отдельной «битой» записи (SAN длиннее 255, DN длиннее 1024,
-     * слишком длинный serial), пачка повторяется по одной записи, и плохие пропускаются.
-     * Иначе одна такая запись останавливала бы лог навсегда: транзакция откатывалась бы
-     * целиком, last_synced_index не двигался, и следующий проход скачивал бы тот же
-     * диапазон. Инфраструктурные ошибки (БД недоступна) сюда не попадают и уходят
-     * наверх — тогда прогресс не двигается и пачка честно перечитывается позже.
+     * Вставка пачки одной транзакцией; если БД отвергла её из-за одной битой записи
+     * (SAN длиннее 255 и т.п.), повтор по одной с пропуском плохих — иначе такая запись
+     * останавливала бы лог навсегда. Инфраструктурные ошибки уходят наверх.
      *
      * @return сколько записей пришлось пропустить
      */
@@ -192,7 +183,7 @@ public class CertificateRepository {
                 long caId = getOrCreateCa(c.issuerDn(), created);
                 Long certId = insertCertificateReturningId(caId, c);
                 if (certId == null) {
-                    continue; // запись уже была (уникальность log_url+log_index) — идемпотентность
+                    continue; // уже вставлена ранее — идемпотентность
                 }
                 for (String d : c.domains()) {
                     domainArgs.add(new Object[]{certId, d, DomainName.reverse(d)});
@@ -227,7 +218,7 @@ public class CertificateRepository {
                 return ps;
             }, keys);
         } catch (DuplicateKeyException e) {
-            return null; // уже вставлена ранее
+            return null;
         }
         return keys.getKey() == null ? null : keys.getKey().longValue();
     }
@@ -245,7 +236,7 @@ public class CertificateRepository {
         }
         List<Long> found = jdbc.queryForList("SELECT id FROM ca WHERE name = ?", Long.class, dn);
         if (!found.isEmpty()) {
-            caIds.put(dn, found.getFirst()); // строка зафиксирована ранее — кешируем сразу
+            caIds.put(dn, found.getFirst());
             return found.getFirst();
         }
         KeyHolder keys = new GeneratedKeyHolder();
@@ -257,8 +248,7 @@ public class CertificateRepository {
         }, keys);
         Number key = keys.getKey();
         if (key == null) {
-            // без id издателя строку сертификата вставлять некуда;
-            // лог отметится ошибкой и повторит диапазон — это лучше NPE без объяснения
+            // без id издателя строку вставлять некуда; лог отметится ошибкой и повторит диапазон
             throw new IllegalStateException("БД не вернула id для ca " + dn);
         }
         long id = key.longValue();
@@ -274,15 +264,9 @@ public class CertificateRepository {
     }
 
     /**
-     * Отбор по домену: условие и значение, которое в него подставляется. Одной парой,
-     * а не двумя методами, — иначе условие и параметр можно было бы поменять порознь,
-     * а тогда запрос молча ищет не то, что написано.
-     *
-     * <p>Запрос приводится к той же форме, в которой лежит колонка
-     * ({@link DomainName#toIndexForm}), поэтому {@code %.рф} и {@code %.xn--p1ai} — один
-     * запрос. Сводить формы сравнением «или так, или этак» нельзя: два LIKE через OR
-     * планировщик H2 в диапазон idx_cert_domain_reversed уже не складывает и сканирует
-     * cert_domain целиком — ровно то, ради чего перевёрнутая колонка и заведена.
+     * Условие отбора по домену и значение к нему — одной парой. Запрос приводится
+     * к индексной форме (toIndexForm), поэтому {@code %.рф} и {@code %.xn--p1ai} —
+     * один запрос; два LIKE через OR планировщик H2 в диапазон индекса не складывает.
      */
     private record DomainMatch(String sql, String param) {
 
@@ -291,9 +275,7 @@ public class CertificateRepository {
             if (!isWildcard(domain)) {
                 return new DomainMatch("d.domain = ?", domain);
             }
-            // %.example.ru — поиск поддоменов: по перевёрнутой колонке это префикс
-            // ur.elpmaxe.% , то есть диапазон в idx_cert_domain_reversed вместо полного
-            // сканирования cert_domain. Шаблоны с % не только в начале так не свернуть
+            // %.example.ru — по перевёрнутой колонке это префикс, то есть диапазон индекса
             if (domain.startsWith("%") && !isWildcard(domain.substring(1))) {
                 return new DomainMatch("d.domain_reversed LIKE ?",
                         DomainName.reverse(domain.substring(1)) + "%");
@@ -303,10 +285,8 @@ public class CertificateRepository {
     }
 
     /**
-     * Общая часть обоих поисковых запросов: соединение, отбор и параметры к нему. Держим
-     * одной строкой — если счётчик и выборка страницы разойдутся в правиле дедупликации,
-     * пейджер начнёт обещать страницы, которых нет, и ни один тест этого не заметит.
-     * SQL и его параметры лежат в одной записи по той же причине, что и в {@link DomainMatch}.
+     * Общая часть обоих поисковых запросов: соединение, отбор и параметры —
+     * одной записью, чтобы счётчик и страница не разошлись.
      */
     private record Selection(String sql, Object[] args) {
 
@@ -317,10 +297,7 @@ public class CertificateRepository {
                     %s
                     WHERE %s%s
                     """.formatted(extraJoin, match.sql(),
-                            // сравниваем с UTC-моментом, переданным параметром, а не с
-                            // CURRENT_TIMESTAMP: в H2 это TIMESTAMP WITH TIME ZONE в зоне
-                            // сервера, а not_after хранится как UTC-локальное время, и на
-                            // машине в MSK граница уезжала бы на три часа
+                            // не CURRENT_TIMESTAMP: в H2 это зона сервера, а даты лежат UTC-локально
                             excludeExpired ? " AND c.not_after >= ?" : ""),
                     excludeExpired
                             ? new Object[]{match.param(), nowUtc()}
@@ -341,31 +318,16 @@ public class CertificateRepository {
     }
 
     /**
-     * Страница выдачи: сколько всего уникальных сертификатов подходит под запрос и какие
-     * id попадают на страницу {@code page} (нумерация с единицы).
-     *
-     * <p>Оба числа считаются и кешируются одной записью намеренно. Раздельные записи
-     * жили по своим таймерам, и после истечения одной из них пейджер собирался из
-     * счётчика одного момента и списка id другого: он то обещал страницы, которых нет,
-     * то показывал «Page 3 of 3» с пустой таблицей. Здесь же {@code total} и
-     * {@code ids} всегда с одного момента: счётчик приходит тем же запросом, что и
-     * страница ({@code COUNT(*) OVER ()}), а отдельно считается только когда страница
-     * пуста и взять его неоткуда. На широком шаблоне это экономит второе полное
-     * сканирование cert_domain на каждое листание.
-     *
-     * <p>Дубли (тот же sha256 в разных логах) сворачиваются в SQL — одна строка на
-     * сертификат, самое раннее попадание в любой лог. Окно режется в БД (LIMIT/OFFSET),
-     * а не в Java: на широком шаблоне выборка — миллионы строк, и materialize всего
-     * списка ради сотни на странице клал бы кучу.
+     * Страница выдачи: сколько всего уникальных сертификатов подходит и какие id
+     * попадают на страницу (нумерация с единицы). Оба числа — одной записью:
+     * раздельные кеши разъезжались, и пейджер обещал страницы, которых нет.
+     * Дубли по sha256 сворачиваются в SQL, окно режется в БД.
      */
     @Cacheable(cacheNames = "search",
             key = "#p0 + ':' + (#p1 ? 'expired' : '') + ':' + #p2 + ':' + #p3"
                     + " + ':' + #p4 + ':' + #p5")
     public SearchResult searchPage(String q, boolean excludeExpired, SortColumn sort,
                                    boolean descending, int page, int pageSize) {
-        // отбор один и для страницы, и для запасного счётчика: разойдись они хоть в
-        // правиле дедупликации, хоть в выборе колонки домена — счётчик перестал бы
-        // описывать ту же выборку, из которой взята страница
         DomainMatch match = DomainMatch.of(q);
         if (pageSize <= 0) {
             return new SearchResult(count(match, excludeExpired), List.of());
@@ -376,8 +338,7 @@ public class CertificateRepository {
     }
 
     private int count(DomainMatch match, boolean excludeExpired) {
-        // строк с rn = 1 ровно столько, сколько различных sha256, поэтому считаем их
-        // напрямую: COUNT(DISTINCT) берётся хеш-агрегатом, без сортировки всей выборки
+        // COUNT(DISTINCT) берётся хеш-агрегатом, без сортировки всей выборки
         Selection selection = Selection.of("", match, excludeExpired);
         Integer total = jdbc.queryForObject("SELECT COUNT(DISTINCT c.sha256) " + selection.sql(),
                 Integer.class, selection.args());
@@ -408,18 +369,13 @@ public class CertificateRepository {
             ids.add(rs.getLong(1));
             total[0] = rs.getInt(2);
         }, args.toArray());
-        // копия неизменяемая: запись живёт в общем кеше, и правка списка одним
-        // вызывающим досталась бы всем следующим
+        // копия неизменяемая: запись живёт в общем кеше
         return ids.isEmpty() ? null : new SearchResult(total[0], List.copyOf(ids));
     }
 
     // --- чтение сертификатов ---
 
-    /**
-     * Строки поиска по переданным id (обычно страница из searchPage), в том же
-     * порядке; несуществующие id пропускаются. Без DER: поиску он не нужен, а на
-     * широком шаблоне это десятки мегабайт BLOB'ов.
-     */
+    /** Строки поиска по id, в том же порядке; несуществующие пропускаются. Без DER. */
     public List<CertRow> certRows(List<Long> ids) {
         return loadRows(ids, false);
     }
@@ -447,14 +403,9 @@ public class CertificateRepository {
                 sha256);
     }
 
-    /**
-     * Строки certificate по id. Домены читаются первым запросом и раскладываются по
-     * строкам на месте: собирать CertRow дважды (сначала без доменов, потом с ними)
-     * пришлось бы только ради порядка запросов.
-     */
+    /** Строки certificate по id: домены читаются первым запросом и раскладываются по строкам. */
     private List<CertRow> loadRows(List<Long> ids, boolean withDer) {
         Map<Long, TreeSet<String>> domains = loadDomains(ids);
-        // порядок этой карты не важен: строки собираются ниже обходом самого ids
         Map<Long, CertRow> rows = new HashMap<>();
         queryByIds(ids, placeholders ->
                 "SELECT c.id, c.issuer_ca_id, ca.name, c.log_url, c.log_index, c.sha256,"
@@ -504,12 +455,7 @@ public class CertificateRepository {
     /** H2 ограничивает число параметров запроса, поэтому IN-список режем на куски. */
     private static final int MAX_IDS_PER_QUERY = 1000;
 
-    /**
-     * Выполняет запрос с {@code IN (...)} по списку id, нарезая его на куски. SQL
-     * собирает переданная функция из готовой строки плейсхолдеров; строки разбирает
-     * RowCallbackHandler, а не RowMapper, — результат копится в коллекции вызывающего,
-     * и Spring не материализует список из null-ов длиной в число строк.
-     */
+    /** Запрос с {@code IN (...)} по списку id, нарезанный на куски; SQL собирает функция из плейсхолдеров. */
     private void queryByIds(List<Long> ids, UnaryOperator<String> sql, RowCallbackHandler handler) {
         for (int from = 0; from < ids.size(); from += MAX_IDS_PER_QUERY) {
             List<Long> chunk = ids.subList(from, Math.min(from + MAX_IDS_PER_QUERY, ids.size()));

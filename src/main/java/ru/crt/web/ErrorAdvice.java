@@ -15,18 +15,9 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
- * Любой отказ MVC — с объяснением на понятном языке, а не кодом ответа в пустой
- * странице. Без этого Spring Boot отдаёт браузеру whitelabel-страницу, где нет ни
- * причины, ни способа продолжить: {@code reason} исключения Boot по умолчанию наружу
- * не выносит ({@code server.error.include-message=never}), а включать его глобально
- * значит показывать заодно и тексты внутренних сбоев.
- *
- * <p>Обработчики перечислены поимённо, а не одним {@code Exception}: тип исключения —
- * единственное, что отличает «сам виноват» (400/404) от «виноваты мы» (500), и
- * сваливать их в одну ветку значит либо врать посетителю про 500, либо молча съедать
- * настоящие сбои. Общий {@code Exception} внизу остаётся сеткой безопасности.
- *
- * <p>Формат ответа выбирает {@link ErrorReply} — тот же, которым отвечают фильтры.
+ * Любой отказ MVC — с объяснением, а не whitelabel-страницей: reason исключения
+ * Boot наружу по умолчанию не выносит. Обработчики поимённо: тип исключения —
+ * единственное, что отличает 400/404 от 500.
  */
 @ControllerAdvice
 class ErrorAdvice {
@@ -40,10 +31,7 @@ class ErrorAdvice {
                 failure.getReason() == null ? "Запрос отклонён." : failure.getReason());
     }
 
-    /**
-     * {@code ?id=abc}, {@code ?p=x} — Spring не смог разобрать параметр. Стандартный
-     * ответ на это — 400 без тела вообще, хотя чинится он одним словом в адресе.
-     */
+    /** {@code ?id=abc} — Spring не смог разобрать параметр; стандартный ответ — 400 без тела. */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<String> badParameter(MethodArgumentTypeMismatchException failure,
                                         HttpServletRequest request) {
@@ -66,19 +54,12 @@ class ErrorAdvice {
     }
 
     /**
-     * Всё остальное. Текст ошибки посетителю не показываем — он про наши внутренности,
-     * а не про его запрос, — но в журнал он попадает целиком: иначе сбой виден только
-     * как «пятисотка» в чужом браузере.
-     *
-     * <p>Штатные отказы самого MVC (метод не поддерживается, тип не принимается) несут
-     * свой код в {@link ErrorResponse} — отдаём его, а не 500: 500 означал бы, что
-     * сломались мы, и попал бы в мониторинг ошибок.
+     * Всё остальное: текст посетителю не показываем, в журнал — целиком. Штатные
+     * отказы MVC несут свой код в {@link ErrorResponse} — отдаём его, а не 500.
      */
     @ExceptionHandler(Exception.class)
     ResponseEntity<String> unexpected(Exception failure, HttpServletRequest request) {
         if (failure instanceof ErrorResponse known && known.getStatusCode().is4xxClientError()) {
-            // detail заполняет сам MVC («Method 'POST' is not supported»); он может быть
-            // и пустым, поэтому фраза целиком из него не собирается
             String detail = known.getBody().getDetail();
             return reply(request, known.getStatusCode(),
                     detail == null ? "Запрос отклонён." : "Запрос отклонён: " + detail);

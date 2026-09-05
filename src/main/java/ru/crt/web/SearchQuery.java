@@ -3,11 +3,7 @@ package ru.crt.web;
 import java.util.List;
 import ru.crt.db.SortColumn;
 
-/**
- * Разобранные параметры поиска: во что контроллер превращает строки запроса, прежде
- * чем отдать их {@link SearchService}. Умолчания живут здесь, а не в обработчике,
- * чтобы второй вход в поиск не заводил свою копию.
- */
+/** Разобранные параметры поиска; умолчания живут здесь, а не в обработчике. */
 public record SearchQuery(
         String q,
         boolean excludeExpired,
@@ -21,19 +17,10 @@ public record SearchQuery(
     /** Умолчание crt.sh — по убыванию. */
     public static final boolean DEFAULT_DESCENDING = true;
 
-    /**
-     * Имена параметров, из которых собирается поиск. Всё прочее в адресе — не наше
-     * (utm-метки, yclid и подобная разметка ссылок), и знать об этом надо не только
-     * здесь: {@code readable-url.js} по этому же списку решает, что переносить в
-     * переписанный адрес, а что заменить.
-     */
+    /** Параметры поиска; по этому же списку readable-url.js решает, что переносить в адрес. */
     public static final List<String> PARAMETERS = List.of("q", "exclude", "sort", "dir", "p");
 
-    /**
-     * Включает ли это значение {@code exclude} фильтр действующих. Отдельным методом,
-     * потому что спрашивают об этом двое: сам разбор запроса и страница отказа, которой
-     * нужно вернуть чекбокс в исходное положение.
-     */
+    /** Включает ли значение {@code exclude} фильтр действующих. */
     public static boolean excludesExpired(String exclude) {
         return EXCLUDE_EXPIRED.equals(exclude);
     }

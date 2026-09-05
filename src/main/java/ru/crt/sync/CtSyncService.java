@@ -24,30 +24,20 @@ import ru.crt.x509.X509;
 
 /**
  * Инкрементальная синхронизация всех логов из ctlog.json в локальную БД.
- * Логи обходятся по кругу срезами по {@link #BATCHES_PER_SLICE} пачек, поэтому большой
- * лог не занимает проход целиком. Ошибка одного лога (например, недоступный Минцифры)
- * не останавливает остальные; прогресс каждого лога сохраняется в ct_log.last_synced_index.
+ * Логи обходятся по кругу срезами, ошибка одного лога не останавливает остальные;
+ * прогресс каждого лога — в ct_log.last_synced_index.
  */
 @Service
 public class CtSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(CtSyncService.class);
 
-    /**
-     * Сколько пачек подряд берём у одного лога, прежде чем перейти к следующему.
-     * Без такого среза первый же большой лог занимал бы проход целиком (догон
-     * миллионов записей идёт часами), и остальные логи не синкались бы вообще.
-     */
+    /** Пачек подряд у одного лога, прежде чем перейти к следующему. */
     private static final int BATCHES_PER_SLICE = 20;
 
     /**
-     * Предел на один проход по времени. Без него проход идёт столько, сколько занимает
-     * догон всех логов (на холодной базе — часами), а каждый следующий запуск по
-     * расписанию только пишет «предыдущий ещё работает»: ct.sync-interval при этом
-     * ничего не значит, свежий ctlog.json не перечитывается, и снаружи невозможно
-     * отличить работающий проход от залипшего. По исчерпании бюджета проход
-     * заканчивается на границе среза — прогресс каждого лога уже сохранён, и
-     * следующий проход продолжает с того же места.
+     * Предел прохода по времени: без него догон холодной базы шёл бы часами,
+     * а следующий запуск лишь писал бы «предыдущий ещё работает».
      */
     private static final Duration MAX_PASS_DURATION = Duration.ofMinutes(30);
 
@@ -66,8 +56,7 @@ public class CtSyncService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
-        // первый синк не блокирует старт HTTP; отдельный поток, а не ForkJoinPool.commonPool:
-        // синк — это блокирующие HTTP и JDBC, а commonPool на 1-2 ядрах имеет один воркер
+        // отдельный поток: синк — блокирующие HTTP и JDBC, а не ForkJoinPool.commonPool
         Thread worker = new Thread(this::syncAll, "ct-sync-initial");
         worker.setDaemon(true);
         worker.start();
@@ -92,8 +81,6 @@ public class CtSyncService {
         passStartedNanos = System.nanoTime();
         try {
             Map<String, Long> progress = repository.loadSyncProgress();
-            // круговой обход: каждый лог получает срез из BATCHES_PER_SLICE пачек и
-            // уступает следующему, пока не догонит свой tree_size или не отвалится
             List<KnownLog> pending = knownLogs();
             while (!pending.isEmpty()) {
                 if (System.nanoTime() - deadlineNanos >= 0) { // разность, а не сравнение: nanoTime переполняется
@@ -131,8 +118,7 @@ public class CtSyncService {
     }
 
     /**
-     * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек, сохраняя прогресс
-     * в {@code progress} и в БД после каждой пачки.
+     * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек.
      *
      * @return true, если лог догнан не полностью и его надо взять на следующем круге
      */
@@ -167,20 +153,17 @@ public class CtSyncService {
                 log.info("Синк {}: {}/{} записей{}", ctLog.description(), processed, treeSize,
                         skipped > 0 ? " (не вставлено " + skipped + ")" : "");
             }
-            return true; // срез исчерпан, лог ещё не догнан
+            return true; // срез исчерпан
         } catch (Exception e) {
             log.warn("Лог {} недоступен: {}", ctLog.url(), e.toString());
             repository.markFailed(ctLog.url(), e.toString());
-            return false; // до следующего прохода
+            return false;
         } finally {
             progress.put(ctLog.url(), processed);
         }
     }
 
-    /**
-     * Запись лога -> строка БД. Public static, чтобы тесты проверяли этот маппинг,
-     * а не свою копию: иначе смена формата serial или таймзоны их не уронила бы.
-     */
+    /** Запись лога -> строка БД; public static, чтобы тесты проверяли этот маппинг, а не свою копию. */
     public static CertificateRepository.NewCert toNewCert(String logUrl, long index,
                                                           CtLogClient.EntryDoc entry) throws Exception {
         CtEntryParser.ParsedEntry parsed = CtEntryParser.parse(entry.leafInput(), entry.extraData());

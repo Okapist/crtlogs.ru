@@ -28,9 +28,7 @@ import ru.crt.x509.X509;
 
 /**
  * Текстовый дамп сертификата в духе {@code openssl x509 -text} — как на странице
- * сертификата crt.sh. Не стремится к побайтовой точности openssl, но повторяет
- * структуру: Data / Version / Serial / Issuer / Validity / Subject / Public Key /
- * X509v3 extensions / Signature Algorithm.
+ * сертификата crt.sh. Побайтовой точности нет, структура повторяется.
  */
 public final class CertTextDump {
 
@@ -70,13 +68,8 @@ public final class CertTextDump {
             Map.entry("1.2.643.100.3", "SNILS"));
 
     /**
-     * "Aug  3 08:05:53 2026 GMT" — как печатает openssl (день дополняется пробелом,
-     * а не нулём). Формат описан одним построителем, а не собирался наполовину
-     * {@code String.format}: тот берёт цифры из локали, и под локалью с не-латинской
-     * системой счисления (hi-IN-u-nu-deva, ar с арабо-индийскими цифрами) дата уходила
-     * бы цифрами, которых в выводе openssl не бывает, — и оседала в кеше дампов на час.
-     * У DateTimeFormatter цифры всегда ASCII (DecimalStyle.STANDARD), локаль отвечает
-     * только за название месяца.
+     * "Aug  3 08:05:53 2026 GMT" — как печатает openssl (день — пробелом). У
+     * DateTimeFormatter цифры всегда ASCII; String.format брал бы их из локали.
      */
     private static final DateTimeFormatter OPENSSL_DATE = new DateTimeFormatterBuilder()
             .appendPattern("MMM ")
@@ -105,8 +98,7 @@ public final class CertTextDump {
         try {
             return dump(c);
         } catch (RuntimeException e) {
-            // содержимое сертификата приходит из публичного CT-лога, то есть от кого угодно:
-            // страница не должна отдавать 500 из-за одной кривой записи — вызывающий покажет PEM
+            // содержимое — от кого угодно: страница не должна падать из-за одной кривой записи
             log.warn("Не удалось построить дамп сертификата: {}", e.toString());
             return null;
         }
@@ -138,16 +130,14 @@ public final class CertTextDump {
         s.append("        ").append(label).append(":\n");
         for (DistinguishedName.Rdn rdn : DistinguishedName.parse(dn.getName())) {
             String name = DN_NAMES.getOrDefault(rdn.type(), rdn.type());
-            // 24 — по самому длинному имени из DN_NAMES (organizationalUnitName), иначе
-            // у длинных имён пропадал пробел перед '='
+            // 24 — по самому длинному имени из DN_NAMES
             s.append("                ").append(String.format(Locale.ROOT, "%-24s", name))
                     .append("= ").append(rdn.value()).append('\n');
         }
     }
 
     private static void appendExtensions(StringBuilder s, X509Certificate c) {
-        // объединение критичных и некритичных: проверять на null только критичные нельзя,
-        // иначе у сертификата без критичных расширений пропадали бы SAN и SCT
+        // null бывает у обоих наборов — объединяем критичные и некритичные
         LinkedHashMap<String, Boolean> all = new LinkedHashMap<>();
         Set<String> critical = c.getCriticalExtensionOIDs();
         if (critical != null) {
@@ -177,12 +167,7 @@ public final class CertTextDump {
         }
     }
 
-    /**
-     * GeneralNames: печатаем знакомые типы (DNS/URI/IP/email), остальное — hex.
-     * Разбор — общий с тем, которым синк вынимает домены сертификата
-     * ({@link CertificateNames}): разойдись они, страница показывала бы одни имена,
-     * а поиск находил бы сертификат по другим. Пакет-private для unit-теста.
-     */
+    /** Знакомые типы — текстом, остальное — hex; разбор общий с синком ({@link CertificateNames}). */
     static void appendSan(StringBuilder s, byte[] generalNames) {
         List<CertificateNames.GeneralName> names = CertificateNames.generalNames(generalNames);
         if (names == null) { // список не читается — показываем байты, а не выдумываем имена
@@ -196,8 +181,7 @@ public final class CertTextDump {
                 case CertificateNames.GeneralName.URI -> appendName(s, "URI", name.text());
                 case CertificateNames.GeneralName.IP -> appendName(s, "IP", ipString(name.value()));
                 default -> {
-                    // строку закрываем здесь: у имени нулевой длины appendHex не печатает
-                    // ни байта, и следующая строка дампа приклеилась бы к метке
+                    // строку закрываем здесь: у имени нулевой длины appendHex не печатает ни байта
                     s.append(EXT_INDENT).append("othername:\n");
                     appendHex(s, name.value(), EXT_INDENT, 16);
                 }
@@ -214,7 +198,6 @@ public final class CertTextDump {
             try {
                 return InetAddress.getByAddress(b).getHostAddress();
             } catch (UnknownHostException ignored) {
-                // fallback ниже
             }
         }
         return LOWER_COLON.formatHex(b);
@@ -265,7 +248,6 @@ public final class CertTextDump {
         return 0;
     }
 
-    /** Дата в форме openssl; вся форма описана в {@link #OPENSSL_DATE}. */
     private static String opensslDate(Instant instant) {
         return OPENSSL_DATE.format(instant.atZone(ZoneOffset.UTC));
     }

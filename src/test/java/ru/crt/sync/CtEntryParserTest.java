@@ -14,10 +14,8 @@ import ru.crt.TestFixtures;
 import ru.crt.client.CtLogClient;
 
 /**
- * Разбор записей CT-лога: реальные записи Yandex-логов (x509_entry и precert_entry)
- * и всё, чем запись может оказаться битой. Данные приходят из публичного лога, то есть
- * от кого угодно, поэтому каждая ошибка формата обязана быть IOException, а не
- * ArrayIndexOutOfBounds где-то в середине.
+ * Разбор записей CT-лога: реальные записи Yandex-логов и всё, чем запись может быть
+ * битой. Ошибка формата — IOException, а не ArrayIndexOutOfBounds из середины.
  */
 class CtEntryParserTest {
 
@@ -90,14 +88,13 @@ class CtEntryParserTest {
         assertTrue(messageOf(() -> CtEntryParser.parse(leaf(0, 0, 0x1234), null)).contains("entry_type"));
     }
 
-    /** Полный precert лежит в extra_data — без него запись разобрать нечем. */
     @Test
     void rejectsPrecertWithoutExtraData() {
         assertTrue(messageOf(() -> CtEntryParser.parse(leaf(0, 0, 1), null)).contains("без extra_data"));
         assertTrue(messageOf(() -> CtEntryParser.parse(leaf(0, 0, 1), "")).contains("без extra_data"));
     }
 
-    /** 3-байтовый length-prefix приходит из лога: он может обещать больше, чем прислали. */
+    /** length-prefix приходит из лога: он может обещать больше, чем прислали. */
     @Test
     void rejectsOpaqueLengthOutsideTheBuffer() {
         assertTrue(messageOf(() -> CtEntryParser.parse(leaf(0, 0, 0, 0x00, 0x00), null))

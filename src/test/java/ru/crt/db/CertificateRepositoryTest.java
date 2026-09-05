@@ -18,31 +18,23 @@ import ru.crt.AbstractIntegrationTest;
 import ru.crt.client.KnownLog;
 
 /**
- * Сквозной тест хранилища на in-memory H2: вставка реальных записей лога, поиск в
- * семантике crt.sh, идемпотентность вставки, exclude=expired, сортировка и пейджинг,
- * состояние логов. Внешний вид выдачи (имена полей, формат дат, CN) сюда не входит —
- * это дело веб-слоя, см. SearchServiceTest и CertDetailsServiceTest.
+ * Сквозной тест хранилища на in-memory H2: вставка реальных записей лога, поиск
+ * в семантике crt.sh, идемпотентность, сортировка, пейджинг, состояние логов.
  */
 class CertificateRepositoryTest extends AbstractIntegrationTest {
 
     /** Домен, на котором висят синтетические строки сортировки, — не пересекается с фикстурой. */
     private static final String SORT_DOMAIN = "sort.example";
 
-    /** Строки выдачи по домену: связка searchPage + certRows, как её делает поиск. */
     private List<CertRow> rows(String q, boolean excludeExpired) {
         return repository.certRows(
                 repository.searchPage(q, excludeExpired, SortColumn.ID, false, 1, 100).ids());
     }
 
-    /** Общее число совпадений по запросу. */
     private int total(String q, boolean excludeExpired) {
         return repository.searchPage(q, excludeExpired, SortColumn.ID, false, 1, 100).total();
     }
 
-    /**
-     * Строка выдачи собирается из certificate, ca и cert_domain — все три должны доехать.
-     * Значения полей в контракте crt.sh закрепляет SearchServiceTest.
-     */
     @Test
     void searchFindsInsertedCertificateWithFilledRow() throws Exception {
         insertFixture();
@@ -57,7 +49,6 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertNull(row.der(), "строкам поиска DER не нужен — это десятки мегабайт на широком шаблоне");
     }
 
-    /** Поиск в семантике crt.sh: поддомены ищутся шаблоном, символы LIKE — пользователя. */
     @Test
     void wildcardSearchFindsSubdomains() throws Exception {
         insertFixture();
@@ -69,7 +60,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
                 "без шаблона совпадение точное, а не по подстроке");
     }
 
-    /** Пачки перечитываются после ошибок, поэтому повторная вставка обязана быть пустой операцией. */
+    /** Пачки перечитываются после ошибок, поэтому повторная вставка — пустая операция. */
     @Test
     void repeatedInsertOfTheSameEntriesAddsNothing() throws Exception {
         List<CertificateRepository.NewCert> rows = fixtureCerts();
@@ -106,9 +97,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
     @Test
     void excludeExpiredFiltersOutOldCerts() throws Exception {
         CertificateRepository.NewCert original = fixtureCerts().getFirst();
-        // второй, истёкший сертификат на том же домене: срок задан вручную, sha256 делаем
-        // другим (в реальности один DER не может иметь разные сроки — иначе дедупликация
-        // по sha256 схлопнула бы строки)
+        // sha256 делаем другим: один DER не может иметь разные сроки — иначе дедупликация схлопнула бы строки
         CertificateRepository.NewCert expired = withValidity(original, 999, "ee",
                 LocalDateTime.of(2019, Month.JANUARY, 1, 0, 0),
                 LocalDateTime.of(2020, Month.JANUARY, 1, 0, 0)); // истёк
@@ -120,12 +109,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertEquals(1, total(FIXTURE_DOMAIN, true), "счётчик учитывает тот же фильтр");
     }
 
-    /**
-     * Срок действия хранится как UTC-локальное время, поэтому и граница «истёк» должна
-     * быть UTC. Со сравнением по часам машины (CURRENT_TIMESTAMP) выдача теряла бы всё,
-     * что истекает в пределах смещения зоны, — тесты идут в Asia/Kolkata (+05:30),
-     * так что сертификат «ещё два часа действителен» такую ошибку ловит.
-     */
+    /** Граница «истёк» — UTC: тесты идут в Asia/Kolkata (+05:30). */
     @Test
     void expiredFilterComparesWithUtcNotWithTheServerClock() throws Exception {
         CertificateRepository.NewCert base = fixtureCerts().getFirst();
@@ -143,7 +127,6 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertEquals(1, total("past.example", false), "без фильтра виден и истёкший");
     }
 
-    /** Счётчик и страница лежат одной записью — почему, см. javadoc searchPage. */
     @Test
     void countAndPageShareOneCacheEntry() throws Exception {
         insertFixture();
@@ -171,10 +154,6 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertTrue(repository.certRows(List.of()).isEmpty());
     }
 
-    /**
-     * IN-список режется на куски по MAX_IDS_PER_QUERY: H2 ограничивает число параметров,
-     * и страница из тысяч id иначе падала бы на самом запросе.
-     */
     @Test
     void queryByIdsSplitsHugeIdListIntoChunks() throws Exception {
         insertFixture();
@@ -194,12 +173,10 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
     @Test
     void sameCertificateFoundInMultipleLogs() throws Exception {
         CertificateRepository.NewCert original = fixtureCerts().getFirst();
-        // тот же DER/sha256, но другой лог и записан на час раньше — как повторная подача
-        // в другой CT-лог; домены в реальности берутся из DER, поэтому у копий совпадают
+        // тот же DER/sha256, другой лог, записан на час раньше — как повторная подача в другой CT-лог
         CertificateRepository.NewCert inOtherLog = copyOf(original, "https://other.example/log/", 42,
                 original.sha256(), original.notBefore(), original.notAfter(),
                 original.entryTs().minusHours(1), original.issuerDn(), original.domains());
-        // не inLog(): здесь важна и другая метка времени попадания в лог
         repository.insertCertificates(List.of(original, inOtherLog));
 
         List<CertRow> found = rows(FIXTURE_DOMAIN, false);
@@ -212,11 +189,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertTrue(occurrences.stream().anyMatch(o -> "https://other.example/log/".equals(o.logUrl())));
     }
 
-    /**
-     * Одна запись, которую отвергает БД, не должна ронять пачку: иначе транзакция
-     * откатывается целиком, last_synced_index не двигается и лог перестаёт синкаться
-     * навсегда — следующий проход скачивает и роняет тот же диапазон.
-     */
+    /** Одна битая запись не должна ронять пачку — иначе лог перестаёт синкаться навсегда. */
     @Test
     void badRecordIsSkippedAndRestOfBatchIsInserted() throws Exception {
         CertificateRepository.NewCert good = fixtureCerts().getFirst();
@@ -229,8 +202,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
 
         assertFalse(rows(FIXTURE_DOMAIN, false).isEmpty(),
                 "соседняя запись из той же пачки должна быть вставлена");
-        // ca издателя откатился вместе с пачкой: если бы его id остался в кеше,
-        // все следующие вставки этого издателя падали бы на внешнем ключе
+        // ca издателя откатился вместе с пачкой: оставленный в кеше id валился бы на внешнем ключе
         assertEquals(0, repository.insertCertificates(List.of(good)),
                 "повторная вставка того же издателя после отката должна проходить");
     }
@@ -247,11 +219,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
 
     // --- сортировка и пейджинг ---
 
-    /**
-     * Три строки на одном домене, у которых каждый порядок сортировки свой: если
-     * индекс sort перепутает колонку, результат совпадёт с другим ожидаемым порядком
-     * и тест это увидит. Возвращает id в порядке вставки (то есть в порядке sort=0 asc).
-     */
+    /** Три строки, у которых каждый порядок сортировки свой; id — в порядке вставки. */
     private List<Long> insertSortableRows() throws Exception {
         CertificateRepository.NewCert base = fixtureCerts().getFirst();
         List<CertificateRepository.NewCert> rows = List.of(
@@ -284,7 +252,6 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertEquals(List.of(b, a, c), page(SortColumn.of(2), false), "2 = Not Before");
         assertEquals(List.of(c, a, b), page(SortColumn.of(3), false), "3 = Issuer Name");
         assertEquals(List.of(a, c, b), page(SortColumn.of(4), false), "4 = Not After");
-        // неизвестный индекс сортировки ведёт себя как Logged At — как и умолчание crt.sh
         assertEquals(SortColumn.LOGGED_AT, SortColumn.of(42), "неизвестный индекс — сортировка по умолчанию");
         assertEquals(SortColumn.LOGGED_AT, SortColumn.of(null), "как и отсутствующий параметр");
     }
@@ -356,10 +323,6 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
                         + " одном JSON с ними разъезжался бы на смещение зоны");
     }
 
-    /**
-     * Прогресс не должен откатываться от ошибки: markFailed не трогает ни индекс, ни
-     * tree_size — иначе лог перекачивал бы уже загруженное.
-     */
     @Test
     void errorKeepsProgressAndIsTruncatedToColumnWidth() {
         repository.upsertLog(LOG_URL, "Test log", "Tester");

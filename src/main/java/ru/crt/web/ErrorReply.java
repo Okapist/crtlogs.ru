@@ -9,12 +9,8 @@ import tools.jackson.core.io.JsonStringEncoder;
 
 /**
  * Отказ в том же виде, в каком клиент просил данные: {@code {"error": "..."}} тем, кто
- * пришёл за JSON, и обычная главная с плашкой — браузеру. Без этого посетитель,
- * упёршийся в лимит частоты, получал в окно браузера строку JSON.
- *
- * <p>Место одно на всех, потому что отказывают трое и в разных слоях: два фильтра —
- * до MVC, {@link ErrorAdvice} — внутри него. Разъехавшись, они отвечали бы на
- * одинаковые запросы то JSON-ом, то страницей.
+ * пришёл за JSON, и главная с плашкой — браузеру. Место одно: отказывают и фильтры,
+ * и {@link ErrorAdvice}.
  */
 final class ErrorReply {
 
@@ -31,16 +27,10 @@ final class ErrorReply {
                 || RequestPaths.normalized(request).startsWith("/api/");
     }
 
-    /**
-     * Страница отказа — главная, где в форме остался исходный запрос вместе с фильтром
-     * «только действующие». Без него отказ на {@code ?q=%&exclude=expired} возвращал
-     * форму со снятым чекбоксом, и поправленный запрос молча искал заново по всем
-     * сертификатам, включая просроченные.
-     */
+    /** Страница отказа — главная с исходным запросом и фильтром в форме. */
     static Reply of(HttpServletRequest request, String message) {
         if (wantsJson(request)) {
-            // текст может нести данные запроса (см. ErrorAdvice.badParameter), поэтому
-            // экранируется полноценным кодировщиком Jackson, а не заменой двух символов
+            // текст может нести данные запроса — экранирует Jackson, а не замена двух символов
             StringBuilder json = new StringBuilder("{\"error\": \"");
             JsonStringEncoder.getInstance().quoteAsString(message, json);
             return new Reply(MediaType.APPLICATION_JSON, json.append("\"}").toString());
@@ -49,10 +39,7 @@ final class ErrorReply {
                 request.getParameter("q"), SearchQuery.excludesExpired(request.getParameter("exclude"))));
     }
 
-    /**
-     * Ответ фильтра. Фильтры пишут в поток руками: MVC до них не доходит, а значит и
-     * привычного ResponseEntity у них нет.
-     */
+    /** Ответ фильтра: MVC до него не доходит, пишем в поток руками. */
     static void write(HttpServletRequest request, HttpServletResponse response,
                       int status, String message) throws IOException {
         Reply reply = of(request, message);

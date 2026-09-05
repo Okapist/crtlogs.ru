@@ -9,11 +9,8 @@ import ru.crt.db.CertificateRepository;
 import ru.crt.x509.X509;
 
 /**
- * Детали сертификата для страницы и для {@code /api/certs/{id}}: строка БД плюс
- * вхождения в логи, отпечатки, openssl-дамп и PEM.
- *
- * <p>Сборка живёт здесь, а не в репозитории: контракт JSON, рендер дампа и кодирование
- * PEM — представление, а не хранение.
+ * Детали сертификата для страницы и {@code /api/certs/{id}}: строка БД плюс вхождения
+ * в логи, отпечатки, openssl-дамп и PEM.
  */
 @Service
 public class CertDetailsService {
@@ -67,10 +64,7 @@ public class CertDetailsService {
         return c == null ? null : new PemFile(c.sha256(), X509.toPem(c.der()));
     }
 
-    /**
-     * Дамп сертификата или null, если DER не разобрался. Null тоже кешируется: на
-     * битой записи разбор всё равно не начнёт получаться, а страница показывает PEM.
-     */
+    /** Дамп или null; null тоже кешируется — на битой записи он не начнёт получаться. */
     private String dump(CertRow c) {
         return certText.get(c.sha256(), () -> CertTextDump.render(c.der()));
     }

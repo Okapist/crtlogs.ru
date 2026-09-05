@@ -12,13 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Subject/issuer DN сертификата: строка RFC 2253 (в этой форме DN отдаёт
- * {@link javax.security.auth.x500.X500Principal#getName()}, в ней же он лежит в базе)
- * -> упорядоченные пары «тип атрибута — значение».
- *
- * <p>Разбор один на всех: и строка «Subject:» дампа, и колонка Common Name выдачи, и CN,
- * который синк кладёт в индекс доменов, читают DN отсюда. Разойдись они — поиск находил
- * бы сертификат по одному имени, а страница показывала бы другое.
+ * Subject/issuer DN сертификата: строка RFC 2253 -> упорядоченные пары «тип атрибута —
+ * значение». Разбор один на всех: дамп, колонка Common Name и CN в индексе доменов.
  */
 public final class DistinguishedName {
 
@@ -31,13 +26,7 @@ public final class DistinguishedName {
     public record Rdn(String type, String value) {
     }
 
-    /**
-     * Пары (тип, значение) в том же порядке, в каком они записаны в строке. Разбор отдан
-     * {@link LdapName}: он снимает экранирование ({@code CN=Foo\, Inc.} — это одно
-     * значение с запятой), раскрывает многозначные RDN ({@code OU=A+OU=B}) и декодирует
-     * форму {@code #hex}. Непарсящийся DN — пустой список: страница не должна падать
-     * из-за одной кривой записи публичного лога.
-     */
+    /** LdapName снимает экранирование, многозначные RDN и {@code #hex}; непарсящийся DN — пустой список. */
     public static List<Rdn> parse(String rfc2253) {
         List<Rdn> out = new ArrayList<>();
         try {
@@ -80,10 +69,7 @@ public final class DistinguishedName {
         return rdnValue instanceof byte[] der ? derString(der) : String.valueOf(rdnValue);
     }
 
-    /**
-     * DER-кодирование значения атрибута: для строковых типов печатаем текст, как
-     * openssl, иначе возвращаем исходную форму {@code #hex}.
-     */
+    /** DER-значение атрибута: строковые типы — текстом, прочее — исходной формой {@code #hex}. */
     private static String derString(byte[] der) {
         Der.Tlv tlv = Der.Tlv.at(der, 0);
         if (tlv == null) {

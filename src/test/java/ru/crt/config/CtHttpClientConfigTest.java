@@ -20,11 +20,8 @@ import ru.crt.TestFixtures;
 import ru.crt.x509.X509;
 
 /**
- * Trust store клиента CT-логов: серверы Минцифры не присылают цепочку целиком, поэтому
- * к стандартному cacerts подмешиваются корневой и промежуточный сертификаты их УЦ.
- *
- * <p>Проверяется именно сборка HttpClient, а не сам клиент: раньше это жило в
- * конструкторе CtLogClient, и добраться до проверки можно было только в обход клиента.
+ * Trust store клиента CT-логов: серверы Минцифры не присылают цепочку целиком,
+ * поэтому к cacerts подмешиваются корень и промежуточный сертификат их УЦ.
  */
 class CtHttpClientConfigTest {
 
@@ -45,8 +42,7 @@ class CtHttpClientConfigTest {
 
     @Test
     void trustedSslContextLoadsExtraPem() throws Exception {
-        // сертификат из фикстуры записываем во временный PEM и строим контекст «cacerts + PEM».
-        // PEM пишем боевым кодировщиком: свой давал бы другую ширину строки и перевод строки
+        // PEM пишем боевым кодировщиком — свой дал бы другую ширину строки
         Path pem = pemFile(X509.toPem(TestFixtures.der(0)));
 
         SSLContext context = CtHttpClientConfig.trustedSslContext(List.of(new FileSystemResource(pem)));
@@ -79,10 +75,7 @@ class CtHttpClientConfigTest {
         assertNotSame(SSLContext.getDefault(), configured.sslContext());
     }
 
-    /**
-     * Ненайденный или битый trust-сертификат не должен ронять приложение на старте:
-     * клиент обязан подняться на стандартном cacerts.
-     */
+    /** Битая настройка не роняет старт — клиент поднимается на стандартном cacerts. */
     @Test
     void unusableTrustSettingLeavesTheClientOnTheDefaultTrustStore() throws Exception {
         Path broken = pemFile("not a certificate\n");

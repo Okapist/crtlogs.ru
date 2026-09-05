@@ -21,12 +21,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Общая загрузка фикстур и сборка объектов контракта, форму конструкторов которых
- * знает только этот класс.
- *
- * <p>Разобранные записи и сертификаты считаются один раз на весь прогон: фикстура
- * неизменяемая, а base64 + разбор X.509 повторялись бы на каждый вызов — в стабах
- * Mockito это десятки перечитываний файла ради одного и того же объекта.
+ * Общая загрузка фикстур и сборка объектов контракта; разобранные записи
+ * и сертификаты считаются один раз на весь прогон.
  */
 public final class TestFixtures {
 
@@ -36,10 +32,7 @@ public final class TestFixtures {
     /** Реальный ctlog.json: три оператора, шесть логов. */
     public static final String LOG_LIST = "/ctlog-list-fixture.json";
 
-    /**
-     * Реальный сертификат УЦ Минцифры на домен .рф: и в CN, и в dNSName имя записано
-     * кириллицей в UTF-8, а не punycode — см. {@code ru.crt.x509.CertificateNames}.
-     */
+    /** Сертификат Минцифры на домен .рф: имя записано кириллицей в UTF-8, а не punycode. */
     public static final String CYRILLIC_CERT = "/cyrillic-san-fixture.pem";
 
     /** Домен этого сертификата (он же CN) как записан — и он же индексная форма имени. */
@@ -84,7 +77,7 @@ public final class TestFixtures {
         return CERTIFICATES.get(index);
     }
 
-    /** DER того же сертификата; getEncoded() и так отдаёт копию, менять её безопасно. */
+    /** DER того же сертификата; getEncoded() и так отдаёт копию. */
     public static byte[] der(int index) {
         return der(certificate(index));
     }
@@ -104,10 +97,9 @@ public final class TestFixtures {
     }
 
     /**
-     * Запись лога (x509_entry) с этим сертификатом — для фикстур, которых в настоящих
-     * записях нет: так они проходят через тот же {@code CtSyncService.toNewCert}, что и
-     * прод, а не через свою копию маппинга. MerkleTreeLeaf: version(1) + leaf_type(1) +
-     * timestamp(8) + entry_type(2) + opaque(3-байтовая длина + DER).
+     * Запись лога (x509_entry) с этим сертификатом: так фикстуры проходят через тот же
+     * {@code CtSyncService.toNewCert}, что и прод. MerkleTreeLeaf: version(1) +
+     * leaf_type(1) + timestamp(8) + entry_type(2) + opaque(3-байтовая длина + DER).
      */
     public static CtLogClient.EntryDoc entryOf(X509Certificate cert, long timestampMs) {
         byte[] der = der(cert);
@@ -131,10 +123,7 @@ public final class TestFixtures {
         }
     }
 
-    /**
-     * Заполненная строка выдачи; параметрами вынесено то, что тесты реально меняют.
-     * Единственное место, знающее форму конструктора SearchRow.
-     */
+    /** Заполненная строка выдачи; единственное место, знающее конструктор SearchRow. */
     public static SearchRow searchRow(long id, String commonName, String identities, String issuer) {
         return new SearchRow(id, 7L, issuer, commonName, identities,
                 "2026-08-03T09:04:23.123", "2026-01-19T10:26:30", "2027-01-19T10:26:30", "ff", 42);

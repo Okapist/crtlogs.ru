@@ -32,11 +32,7 @@ import ru.crt.client.KnownLog;
 import ru.crt.config.AppProperties;
 import ru.crt.db.CertificateRepository;
 
-/**
- * Проход синхронизации на моках клиента и хранилища: догон лога, круговой обход
- * логов срезами, изоляция ошибок и продвижение прогресса. В сеть и в БД тест не
- * ходит — проверяется именно логика обхода.
- */
+/** Проход синхронизации на моках клиента и хранилища — в сеть и в БД тест не ходит. */
 class CtSyncServiceTest {
 
     private static final String LOG_A = "https://a.example/log/";
@@ -94,11 +90,7 @@ class CtSyncServiceTest {
         verify(repository).markCaughtUp(LOG_A, 3L);
     }
 
-    /**
-     * Ответ короче запрошенного диапазона — нормальная ситуация: сервер отдаёт, сколько
-     * готов. Прогресс двигается на фактическое число записей, иначе следующая пачка
-     * пропустила бы хвост.
-     */
+    /** Сервер может отдать меньше запрошенного — прогресс двигается на фактическое число записей. */
     @Test
     void progressAdvancesByActualEntryCount() throws Exception {
         logList(LOG_A);
@@ -115,11 +107,7 @@ class CtSyncServiceTest {
         verify(client, times(2)).getEntries(anyString(), anyLong(), anyLong());
     }
 
-    /**
-     * Круговой обход: большой лог не занимает проход целиком, а уступает следующему
-     * через BATCHES_PER_SLICE пачек — иначе догон миллионов записей одного лога
-     * оставил бы остальные несинхронизированными вообще.
-     */
+    /** Большой лог уступает следующему после BATCHES_PER_SLICE пачек. */
     @Test
     void bigLogYieldsToTheNextOneAfterOneSlice() throws Exception {
         logList(LOG_A, LOG_B);
@@ -156,10 +144,6 @@ class CtSyncServiceTest {
         verify(repository).markCaughtUp(LOG_B, 0L);
     }
 
-    /**
-     * Битая запись не должна останавливать лог: она пропускается, а прогресс всё равно
-     * двигается на размер пачки — иначе следующий проход скачивал бы тот же диапазон.
-     */
     @Test
     void unparseableEntryIsSkippedButProgressStillMoves() throws Exception {
         logList(LOG_A);
@@ -190,12 +174,7 @@ class CtSyncServiceTest {
         verify(repository, never()).upsertLog(anyString(), anyString(), anyString());
     }
 
-    /**
-     * Проход ограничен по времени. Без границы догон холодной базы держал бы проход
-     * часами: расписание всё это время только писало бы «предыдущий ещё работает»,
-     * свежий ctlog.json не перечитывался бы, а отличить работающий проход от залипшего
-     * стало бы нечем. Дедлайн передаётся явно — иначе тест ждал бы полчаса.
-     */
+    /** Дедлайн передаётся явно — иначе тест ждал бы полчаса. */
     @Test
     void passStopsWhenItsTimeBudgetIsSpent() throws Exception {
         logList(LOG_A, LOG_B);
@@ -207,7 +186,6 @@ class CtSyncServiceTest {
         verify(repository).upsertLog(eq(LOG_A), anyString(), anyString());
     }
 
-    /** Проход, закончившийся по бюджету, обязан освободить флаг: иначе синка больше нет. */
     @Test
     void spentBudgetDoesNotBlockTheNextPass() throws Exception {
         logList(LOG_A);
@@ -220,7 +198,6 @@ class CtSyncServiceTest {
         verify(repository).markCaughtUp(LOG_A, 0L);
     }
 
-    /** Второй проход поверх идущего только удвоил бы нагрузку на логи и БД. */
     @Test
     void concurrentPassIsSkippedWhileTheFirstOneRuns() throws Exception {
         CountDownLatch started = new CountDownLatch(1);
@@ -243,7 +220,6 @@ class CtSyncServiceTest {
         verify(client, times(1)).fetchLogList(anyString());
     }
 
-    /** Первый синк не должен блокировать старт HTTP — он уходит в отдельный поток. */
     @Test
     void applicationReadyStartsSyncInBackground() throws Exception {
         logList(LOG_A);
@@ -267,10 +243,8 @@ class CtSyncServiceTest {
         assertEquals("CN=cateam.ru", cert.subjectDn());
         assertEquals("CN=TCI ECDSA B1 16-280", cert.issuerDn());
         assertEquals("018a8ce5854e250482138e0d", cert.serial(), "serial — hex в нижнем регистре");
-        // сами домены — контракт CtEntryParser (см. CtEntryParserTest), здесь важно, что
-        // они доезжают до строки БД, а не теряются по дороге
         assertFalse(cert.domains().isEmpty());
-        // даты приводятся к UTC независимо от таймзоны машины
+        // даты — UTC независимо от таймзоны машины
         assertEquals(LocalDateTime.of(2026, Month.JANUARY, 19, 10, 26, 30), cert.notBefore());
         assertEquals(LocalDateTime.of(2027, Month.JANUARY, 19, 10, 26, 30), cert.notAfter());
         assertEquals(LocalDateTime.of(2026, Month.JANUARY, 19, 10, 45, 44, 153_000_000), cert.entryTs(),

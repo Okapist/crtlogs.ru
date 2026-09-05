@@ -8,13 +8,8 @@ import ru.crt.db.CertRow;
 import ru.crt.db.CertificateRepository;
 
 /**
- * Единственный вход в поиск: проверка запроса, счётчик совпадений, окно страницы и
- * сборка строк выдачи в контракте crt.sh. Проверка «слишком общий шаблон» стоит здесь,
- * а не в обработчике, чтобы второй вход в поиск не дошёл до полного сканирования
- * cert_domain молча.
- *
- * <p>Отказ отдаётся {@link ResponseStatusException}: сервис живёт в веб-слое, а код
- * 400 и текст ошибки — часть контракта поиска, а не деталь обработчика.
+ * Единственный вход в поиск: проверка запроса, счётчик, окно страницы и строки выдачи
+ * в контракте crt.sh. Отказ — ResponseStatusException: код 400 и текст — часть контракта.
  */
 @Service
 public class SearchService {
@@ -33,15 +28,11 @@ public class SearchService {
 
     public SearchPage search(SearchQuery query) {
         String q = query.q();
-        // тексты пишутся посетителю, а не в лог: их показывает страница отказа
-        // (HtmlView.indexPage) и повторяет JSON-ответ, поэтому каждый называет и
-        // причину, и годный пример запроса
         if (q.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Пустой запрос: введите домен целиком (example.ru) или шаблон (%.example.ru).");
         }
         if (isTooBroadcast(q)) {
-            // порог берём у самой проверки: литералом здесь он разъехался бы с ней
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Слишком общий шаблон: помимо подстановочных % и _ в запросе должно остаться"
                             + " не меньше " + MIN_PATTERN_CHARS
@@ -52,20 +43,13 @@ public class SearchService {
         return new SearchPage(rows(repository.certRows(found.ids()), found.total()), found.total());
     }
 
-    /**
-     * Шаблон, в котором не осталось ничего, по чему искать: {@code %}, {@code %_},
-     * {@code %a%} — это запрос «выдай базу целиком». Пакет-private для unit-теста.
-     */
+    /** Шаблон без значащих символов: {@code %}, {@code %_}, {@code %a%} — «выдай базу целиком». */
     static boolean isTooBroadcast(String q) {
         return CertificateRepository.isWildcard(q)
                 && q.replace("%", "").replace("_", "").length() < MIN_PATTERN_CHARS;
     }
 
-    /**
-     * Строки БД -> строки выдачи: имена в форме показа ({@link DisplayNames}), даты во
-     * внешнем формате. Общее число совпадений кладётся в result_count каждой строки —
-     * так его видят клиенты crt.sh.
-     */
+    /** Строки БД -> строки выдачи; total кладётся в result_count каждой строки. */
     private static List<SearchRow> rows(List<CertRow> certs, int total) {
         return certs.stream()
                 .map(c -> new SearchRow(

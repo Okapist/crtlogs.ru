@@ -8,13 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import ru.crt.TestFixtures;
 
-/**
- * Две стороны одного имени: индексная форма, по которой ищут, и расшифровка, которую
- * показывают.
- *
- * <p>Обе проверяются на одних и тех же строках не случайно: это одно и то же правило, и
- * разойдись они, посетитель копировал бы из выдачи имя, по которому ничего не находится.
- */
+/** Индексная форма и расшифровка — одно правило, проверяются на одних строках. */
 class DomainNameTest {
 
     /** Домен фикстуры Минцифры: в сертификате записан кириллицей, им же и ищется. */
@@ -28,7 +22,6 @@ class DomainNameTest {
         assertEquals(CYRILLIC, DomainName.toIndexForm("Антоненков.РФ"), "и регистр тоже");
     }
 
-    /** Ради этого запроса всё и затевалось: шаблон поддоменов набирается в любой форме. */
     @Test
     void wildcardKeepsItsPlaceWhileTheRestIsTranslated() {
         assertEquals("%.рф", DomainName.toIndexForm("%.рф"));
@@ -37,11 +30,7 @@ class DomainNameTest {
         assertEquals("_.рф", DomainName.toIndexForm("_.рф"), "_ — тоже подстановочный знак LIKE");
     }
 
-    /**
-     * Регрессия, ради которой индекс и держит юникод: {@code %троят.рф} обязан находить
-     * {@code достроят.рф} так же, как {@code %stroyat.ru} находит {@code dostroyat.ru}.
-     * На punycode-индексе это было невозможно — см. javadoc {@link DomainName}.
-     */
+    /** Ради этого юникод-индекс и держат: знак режет кириллический ярлык как латинский. */
     @Test
     void aWildcardCutsACyrillicLabelJustLikeALatinOne() {
         assertEquals("%троят.рф", DomainName.toIndexForm("%троят.рф"));
@@ -55,12 +44,6 @@ class DomainNameTest {
         assertEquals("%vk%", DomainName.toIndexForm("%vk%"), "латиница как была");
     }
 
-    /**
-     * Промежуточный шаг, на котором сходятся записи одного имени: сам по себе он
-     * подстановочный знак от ярлыка отделяет, а ярлык, разрезанный знаком посередине,
-     * и любой с {@code _} не трогает — на поиске это не сказывается, потому что
-     * {@link DomainName#toUnicode} возвращает всё это в исходный вид (тест выше).
-     */
     @Test
     void punycodeIsTheStepWhereTheTwoRecordingsMeet() {
         assertEquals(PUNYCODE, DomainName.toAscii(CYRILLIC));
@@ -71,11 +54,6 @@ class DomainNameTest {
         assertEquals("_домрфбанк.xn--p1ai", DomainName.toAscii("_домрфбанк.рф"));
     }
 
-    /**
-     * Канонизируется только то, что без канона не найдётся. Всё прочее, что подавший
-     * сертификат счёл именем, проходит буква в букву: {@code toASCII} на половине из
-     * этого бросает исключение, а терять сертификат из-за такого имени нельзя.
-     */
     @Test
     void asciiNamesAreNotTouchedAtAll() {
         assertEquals("*.example.ru", DomainName.toAscii("*.example.ru"));
@@ -86,17 +64,11 @@ class DomainNameTest {
         assertNull(DomainName.toAscii(null));
     }
 
-    /** Ярлык, у которого канона нет, не мешает канонизировать соседний. */
     @Test
     void onlyTheLabelsThatCanBeTranslatedAre() {
         assertEquals("я".repeat(70) + ".xn--p1ai", DomainName.toAscii("я".repeat(70) + ".рф"));
     }
 
-    /**
-     * Имя, индексная форма которого в колонку не влезает, индексируется и ищется как
-     * записано (почему его нельзя выбросить — см. javadoc {@code toIndexForm}). Длиннее
-     * оригинала форма бывает из-за nameprep: {@code ß} превращается в {@code ss}.
-     */
     @Test
     void aNameWhoseIndexFormDoesNotFitIsIndexedAsWritten() {
         String expanding = ("ß".repeat(30) + ".").repeat(5) + "ru";
@@ -106,7 +78,6 @@ class DomainNameTest {
         assertNull(DomainName.toIndexForm(null));
     }
 
-    /** Вторая поисковая колонка описана тем же классом — здесь же и проверяется. */
     @Test
     void reverseIsPlainStringReversal() {
         assertEquals("ur.elpmaxe.www", DomainName.reverse("www.example.ru"));
@@ -124,32 +95,19 @@ class DomainNameTest {
         assertNull(DomainName.toUnicode(null));
     }
 
-    /**
-     * Список сортируется заново: из БД он приходит упорядоченным по хранимой форме, то
-     * есть по punycode, и расшифрованные имена стояли бы в нём как попало.
-     */
+    /** Из БД список приходит по punycode — порядок задаётся заново, по показанным именам. */
     @Test
     void identifiersAreOrderedByWhatIsShown() {
         assertEquals(List.of("example.ru", CYRILLIC),
                 DomainName.toUnicodeAll(List.of(PUNYCODE, "example.ru")));
     }
 
-    /**
-     * Латинский ярлык рядом с кириллическим — это {@code www} и зона {@code com}, то
-     * есть половина рунета. Смешением письменностей считается только смешение внутри
-     * одного ярлыка, поэтому расшифровка идёт по ярлыкам, а не по имени целиком.
-     */
     @Test
     void asciiLabelsNextToCyrillicOnesAreNormal() {
         assertEquals("www.нашажизнь.рф", DomainName.toUnicode("www.xn--80aasee0af7fwb.xn--p1ai"));
         assertEquals("нашажизнь.com", DomainName.toUnicode("xn--80aasee0af7fwb.com"));
     }
 
-    /**
-     * {@code xn--pple-43d} — это {@code аpple} с кириллической «а»: от {@code apple} на
-     * глаз не отличить. Такой ярлык показывается punycode'ом — то есть ровно так, как
-     * записан в сертификате.
-     */
     @Test
     void labelsMixingCyrillicWithLatinStayInPunycode() {
         assertEquals("xn--pple-43d.com", DomainName.toUnicode("xn--pple-43d.com"));
@@ -157,7 +115,6 @@ class DomainNameTest {
                 "иначе тест проверял бы нерасшифровываемую строку и ничего не значил");
     }
 
-    /** Не всякий {@code xn--} — punycode; выдумывать имя вместо непонятного нельзя. */
     @Test
     void undecodablePunycodeIsShownAsItIs() {
         assertEquals("xn--", DomainName.toUnicode("xn--"));
@@ -165,10 +122,7 @@ class DomainNameTest {
         assertEquals("xn--80ak6aa92e.com", DomainName.toUnicode("xn--80ak6aa92e.com"));
     }
 
-    /**
-     * Показанное имя обязано находиться: расшифровка, которая кодируется обратно во
-     * что-то другое, отправила бы посетителя с копией из выдачи не за тем сертификатом.
-     */
+    /** Показанное имя обязано находиться. */
     @Test
     void whatIsShownCanBeSearchedFor() {
         for (String punycode : List.of(PUNYCODE, "xn--80aasee0af7fwb.com", "*.xn--p1ai",

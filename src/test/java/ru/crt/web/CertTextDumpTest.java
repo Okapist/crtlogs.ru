@@ -7,11 +7,7 @@ import static ru.crt.TestFixtures.der;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * Дамп в духе {@code openssl x509 -text} на реальных записях фикстуры. Побайтовой
- * точности с openssl не требуется, но структура и форматы (hex через двоеточие,
- * даты, имена расширений) закреплены: по ним страница сертификата и читается.
- */
+/** Дамп в духе {@code openssl x509 -text} на реальных записях: структура и форматы закреплены. */
 class CertTextDumpTest {
 
     @Test
@@ -74,10 +70,7 @@ class CertTextDumpTest {
         assertEquals("                DNS:a.ru\n", s.toString());
     }
 
-    /**
-     * Незнакомый тип имени — hex под меткой. Метка закрывает свою строку и при пустом
-     * значении: иначе к ней приклеивалась бы следующая строка дампа.
-     */
+    /** Метка закрывает свою строку и при пустом значении — иначе приклеилась бы следующая. */
     @Test
     void othernameLabelEndsItsLine() {
         StringBuilder empty = new StringBuilder();

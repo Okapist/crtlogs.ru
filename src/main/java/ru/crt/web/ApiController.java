@@ -16,13 +16,8 @@ import org.springframework.web.server.ResponseStatusException;
 import ru.crt.db.CertificateRepository;
 
 /**
- * REST API. Основные эндпоинты повторяют контракт crt.sh, чтобы работали
- * привычные клиенты: {@code /?q=...&output=json}, {@code /?d=<id>}, {@code /?id=<id>}.
- *
- * <p>Здесь только HTTP: разбор параметров, коды ответов и выбор представления.
- * Порядок вызовов поиска держит {@link SearchService}, сборку деталей сертификата —
- * {@link CertDetailsService}; репозиторий остаётся напрямую только у статуса логов,
- * где ответ — построчная проекция ct_log без всякой оркестрации.
+ * REST API. Основные эндпоинты повторяют контракт crt.sh: {@code /?q=...&output=json},
+ * {@code /?d=<id>}, {@code /?id=<id>}; здесь только HTTP, оркестрация — в сервисах.
  */
 @RestController
 public class ApiController {
@@ -52,13 +47,7 @@ public class ApiController {
 
     /**
      * Поиск как у crt.sh: сортировка {@code sort} (0 = ID, 1 = Logged At, 2 = Not Before,
-     * 3 = Issuer Name, 4 = Not After) и {@code dir=asc|desc}, по умолчанию Logged At по
-     * убыванию; пейджинг — {@code p} (с единицы). Умолчания и проверки запроса —
-     * в {@link SearchQuery} и {@link SearchService}.
-     *
-     * <p>JSON и HTML — разные обработчики, а не один с {@code Object} на выходе: у метода
-     * с двумя контрактами сигнатура не говорила, чем он отвечает, и Spring не мог
-     * применить к нему обычное преобразование по типу.
+     * 3 = Issuer Name, 4 = Not After), {@code dir=asc|desc}, пейджинг {@code p}.
      */
     @GetMapping(value = "/", params = {"q", "output=json", "!d", "!id"})
     public List<SearchRow> searchJson(@RequestParam String q,
@@ -92,10 +81,7 @@ public class ApiController {
         return require(certificates.details(id), id);
     }
 
-    /**
-     * Скачивание сертификата в PEM, как {@code /?d=<id>} у crt.sh. Полные детали здесь
-     * не собираются: дамп и вхождения в логи файлу не нужны.
-     */
+    /** Скачивание сертификата в PEM, как {@code /?d=<id>} у crt.sh. */
     @GetMapping(value = "/", params = {"d", "!q", "!id"})
     public ResponseEntity<byte[]> download(@RequestParam long d) {
         CertDetailsService.PemFile file = require(certificates.pem(d), d);
@@ -125,12 +111,8 @@ public class ApiController {
     }
 
     /**
-     * Публичный статус синка без токена: сводка по логам без текстов ошибок —
-     * для блока под кнопкой поиска. Полные детали — {@code /api/logs} под токеном.
-     *
-     * <p>Ответ кешируемый: виджет опрашивает его раз в 30 секунд с каждой открытой
-     * страницы, а данные меняются не чаще, чем идёт синк. Лимит частоты на этот путь
-     * не распространяется — почему, см. {@code RateLimitFilter.shouldNotFilter}.
+     * Публичный статус синка без токена: без текстов ошибок, для виджета под кнопкой
+     * поиска. Ответ кешируемый — виджет опрашивает его с каждой открытой страницы.
      */
     @GetMapping("/api/status")
     public ResponseEntity<List<LogPublicStatus>> publicStatus() {

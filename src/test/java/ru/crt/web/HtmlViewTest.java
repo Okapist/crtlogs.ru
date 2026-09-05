@@ -13,17 +13,10 @@ import org.junit.jupiter.api.Test;
 import ru.crt.TestFixtures;
 import ru.crt.db.SortColumn;
 
-/**
- * Серверный рендер страниц: разметка crt.sh, экранирование и пейджер. Шаблоны здесь —
- * обычные строки с {@code %s}, поэтому любая подстановка проверяется на экранирование,
- * а ссылки — на относительность (стенд живёт под префиксом /testing/).
- */
+/** Серверный рендер страниц: разметка crt.sh, экранирование и пейджер. */
 class HtmlViewTest {
 
-    /**
-     * Страница результатов: параметрами вынесено то, что тесты реально меняют. Число
-     * страниц выводится из общего числа совпадений, поэтому задаётся через него.
-     */
+    /** Страница результатов; число страниц задаётся через total. */
     private static String results(String q, boolean excludeExpired, SortColumn sort,
                                   boolean descending, int page, int totalPages, List<SearchRow> rows) {
         return HtmlView.resultsPage(new SearchQuery(q, excludeExpired, sort, descending, page),
@@ -35,12 +28,7 @@ class HtmlViewTest {
         return results("q", false, SortColumn.LOGGED_AT, true, page, totalPages, List.of());
     }
 
-    /**
-     * От esc() зависит защита от XSS во всех подстановках шаблонов страниц, а имена
-     * издателей у российских УЦ — кириллица. Закрепляем оба свойства: метасимволы
-     * экранируются, кириллица проходит как есть (однопараметрический HtmlUtils.htmlEscape
-     * работает как ISO-8859-1 и превратил бы её в числовые сущности).
-     */
+    /** esc() — защита от XSS во всех подстановках; кириллица проходит как есть. */
     @Test
     void escEscapesMetacharactersAndKeepsCyrillic() {
         assertEquals("&amp;&lt;&gt;&quot;&#39;", HtmlView.esc("&<>\"'"));
@@ -50,12 +38,6 @@ class HtmlViewTest {
 
     // --- главная ---
 
-    /**
-     * Главная рисуется здесь же, а не лежит отдельным index.html: иначе шапка, копирайт
-     * и подключение счётчика существовали бы в трёх копиях. readable-url.js только
-     * переписывает адрес, поэтому поиск обязан работать и без него: обычный GET-submit с
-     * action и method прямо в разметке.
-     */
     @Test
     void indexPageCarriesTheSearchFormAndTheSharedFrame() {
         String html = HtmlView.indexPage();
@@ -69,18 +51,12 @@ class HtmlViewTest {
         assertFalse(html.contains("readable-url.js"), "на пустой главной переписывать нечего");
     }
 
-    /** Готовый адрес приходит скрипту атрибутом — правило кодирования остаётся на сервере. */
     @Test
     void theReadableUrlScriptExistsInStatic() {
         assertNotNull(HtmlView.class.getResource("/static/readable-url.js"),
                 "разметка ссылается на файл, которого нет в static");
     }
 
-    /**
-     * Переписанный адрес должен быть тем же поиском, а не длиннее набранного: параметры
-     * со значением по умолчанию в него не попадают, отличающиеся — попадают все, иначе
-     * F5 после переписывания вернул бы не ту страницу.
-     */
     @Test
     void theReadableUrlCarriesEveryNonDefaultParameterAndNothingElse() {
         assertEquals("?q=%.рф",
@@ -91,22 +67,13 @@ class HtmlViewTest {
         assertEquals("?q=q&amp;p=2", readableUrl(emptyResults(2, 3)), "страница — тоже часть поиска");
     }
 
-    /**
-     * На странице отказа адрес не переписывается: сюда приходят и 404, и 429, а по
-     * одному лишь запросу не восстановить, на какой странице и сортировке посетителя
-     * отбили, — переписав адрес, мы бы у него эту страницу и отняли.
-     */
+    /** На странице отказа адрес не переписывается. */
     @Test
     void theErrorPageLeavesTheAddressAlone() {
         assertFalse(HtmlView.indexPage("причина", "%a%", true).contains("readable-url.js"));
     }
 
-    /**
-     * Счётчик берёт location.href при инициализации, поэтому переписывать адрес до него
-     * нельзя: метки перехода (utm, yclid) описаны не поиском и в переписанный адрес
-     * попадают только переносом на стороне скрипта — а Метрика к тому моменту уже
-     * прочитала бы адрес без них.
-     */
+    /** metrika.js читает location.href при инициализации — переписывать адрес можно только после. */
     @Test
     void theAddressIsRewrittenOnlyAfterTheAnalyticsScriptHasReadIt() {
         String html = emptyResults(1, 1);
@@ -126,11 +93,6 @@ class HtmlViewTest {
         return tail.substring(0, tail.indexOf('"'));
     }
 
-    /**
-     * Отказ показывается на той же главной: причина текстом и та же форма с исходным
-     * запросом. Запрос приходит из строки браузера, поэтому здесь же закрепляем его
-     * экранирование — он подставляется в атрибут value, где кавычка выводит из атрибута.
-     */
     @Test
     void indexPageWithErrorShowsTheReasonAndKeepsTheQueryInTheForm() {
         String html = HtmlView.indexPage("Слишком общий шаблон: <нужно> 2 символа",
@@ -146,11 +108,6 @@ class HtmlViewTest {
         assertFalse(html.contains("<script>"), "иначе показ запроса обратно — это XSS через ?q=");
     }
 
-    /**
-     * Форма отказа возвращает не только запрос, но и фильтр «только действующие». Иначе
-     * поиск с ним после отказа продолжался бы уже без него — молча и по всей базе,
-     * включая просроченные сертификаты.
-     */
     @Test
     void rejectedSearchKeepsTheExpiredFilterTicked() {
         assertTrue(HtmlView.indexPage("причина", "%a%", true)
@@ -202,12 +159,7 @@ class HtmlViewTest {
         assertTrue(html.contains("&lt;i&gt;issuer&lt;/i&gt;"));
     }
 
-    /**
-     * Переключатель обязан вести к обратному значению фильтра. Раньше в положении
-     * «включить» обе ветки давали один и тот же адрес: ссылка вела на ту же страницу, и
-     * включить фильтр из UI было нельзя вовсе. Текущую сортировку он при этом сохраняет,
-     * а страницу сбрасывает — выборка меняет размер, и третьей может уже не быть.
-     */
+    /** Переключатель ведёт к обратному значению фильтра; сортировку сохраняет, страницу сбрасывает. */
     @Test
     void expiredToggleSwitchesBetweenIncludeAndExclude() {
         String all = results("cateam.ru", false, SortColumn.NOT_BEFORE, true, 3, 5, List.of());
@@ -222,7 +174,6 @@ class HtmlViewTest {
                 "остальные ссылки несут текущий фильтр и сортировку");
     }
 
-    /** Активная колонка показывает стрелку и предлагает обратное направление. */
     @Test
     void sortableHeadersFlipDirectionAndMarkTheActiveColumn() {
         String descending = emptyResults(1, 1);
@@ -254,12 +205,6 @@ class HtmlViewTest {
         assertFalse(last.contains("Next"), "на последней странице некуда вперёд");
     }
 
-    /**
-     * Сортировка, страницы и JSON-выдача — всё это ссылки на тот же запрос, поэтому
-     * после пары нажатий адрес в строке браузера и есть то, что посетитель скопирует и
-     * пришлёт. Читаемым он остаётся ровно там, где кодировать нечего: правила и их
-     * обратимость закрепляет {@link QueryStringTest}.
-     */
     @Test
     void linksRepeatTheQueryInAReadableForm() {
         String html = results("%.рф", false, SortColumn.LOGGED_AT, true, 1, 2, List.of());
@@ -321,10 +266,7 @@ class HtmlViewTest {
         assertTrue(html.contains("CN=Issuer DN"));
     }
 
-    /**
-     * Стенд живёт под префиксом /testing/, поэтому корневая ссылка увела бы его
-     * посетителя на прод. Протокольно-относительные (//fonts...) — не в счёт.
-     */
+    /** Стенд живёт под /testing/ — корневая ссылка увела бы его посетителя на прод. */
     @Test
     void allLinksAreRelativeSoThatThePrefixedStandKeepsWorking() {
         Pattern rootRelative = Pattern.compile("(?:href|src)=\"/(?!/)");
@@ -338,7 +280,6 @@ class HtmlViewTest {
         assertFalse(rootRelative.matcher(cert).find(), "на странице сертификата есть корневая ссылка");
     }
 
-    /** Даты приходят из БД и могут быть null (entry_ts необязателен) — страница не должна падать. */
     @Test
     void missingTimestampsRenderAsEmptyCells() {
         String html = results("q", false, SortColumn.LOGGED_AT, true, 1, 1,
