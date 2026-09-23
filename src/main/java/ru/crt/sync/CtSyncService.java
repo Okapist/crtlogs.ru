@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -55,11 +54,8 @@ public class CtSyncService {
         worker.start();
     }
 
-    @Scheduled(fixedDelayString = "${ct.sync-interval:PT10M}")
-    public void scheduledSync() {
-        syncAll();
-    }
-
+    // первый проход запускает onApplicationReady, планировщик — только последующие
+    @Scheduled(initialDelayString = "${ct.sync-interval:PT10M}", fixedDelayString = "${ct.sync-interval:PT10M}")
     public void syncAll() {
         syncAll(System.nanoTime() + MAX_PASS_DURATION.toNanos());
     }
@@ -82,7 +78,11 @@ public class CtSyncService {
                 }
                 List<KnownLog> next = new ArrayList<>(pending.size());
                 for (KnownLog ctLog : pending) {
-                    if (syncSlice(ctLog, progress)) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        log.info("Проход синхронизации прерван — приложение останавливается");
+                        return;
+                    }
+                    if (syncSlice(ctLog, progress, deadlineNanos)) {
                         next.add(ctLog);
                     }
                 }
@@ -110,14 +110,18 @@ public class CtSyncService {
     }
 
     /**
-     * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек.
+     * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек или до дедлайна прохода.
      * @return true, если лог догнан не полностью и его надо взять на следующем круге
      */
-    private boolean syncSlice(KnownLog ctLog, Map<String, Long> progress) {
+    private boolean syncSlice(KnownLog ctLog, Map<String, Long> progress, long deadlineNanos) {
         long processed = progress.getOrDefault(ctLog.url(), 0L);
         try {
             long treeSize = client.getSth(ctLog.url()).treeSize();
             for (int batch = 0; batch < BATCHES_PER_SLICE; batch++) {
+                // дедлайн проверяется и внутри среза: 20 пачек по медленному логу — это часы, а не минуты
+                if (batch > 0 && System.nanoTime() - deadlineNanos >= 0) {
+                    return true;
+                }
                 if (processed >= treeSize) {
                     repository.markCaughtUp(ctLog.url(), treeSize);
                     return false;
@@ -145,6 +149,10 @@ public class CtSyncService {
                         skipped > 0 ? " (не вставлено " + skipped + ")" : "");
             }
             return true;
+        } catch (InterruptedException e) {
+            // остановка приложения, а не ошибка лога: флаг вернуть, last_error не трогать
+            Thread.currentThread().interrupt();
+            return false;
         } catch (Exception e) {
             log.warn("Лог {} недоступен: {}", ctLog.url(), e.toString());
             repository.markFailed(ctLog.url(), e.toString());
@@ -165,7 +173,7 @@ public class CtSyncService {
                 index,
                 der,
                 X509.sha256Hex(der),
-                serialHex(cert),
+                X509.serialHex(cert),
                 cert.getSubjectX500Principal().getName(),
                 cert.getIssuerX500Principal().getName(),
                 utc(cert.getNotBefore().toInstant()),
@@ -178,10 +186,6 @@ public class CtSyncService {
     /** Даты храним в UTC-локальном представлении, независимо от таймзоны машины. */
     private static LocalDateTime utc(Instant instant) {
         return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
-    }
-
-    private static String serialHex(X509Certificate cert) {
-        return HexFormat.of().formatHex(cert.getSerialNumber().toByteArray());
     }
 
 }

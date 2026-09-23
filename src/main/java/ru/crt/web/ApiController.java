@@ -97,13 +97,13 @@ public class ApiController {
     }
 
     /** Наши расширения: статус логов и синка (закрыт токеном, см. AuthTokenFilter). */
-    @GetMapping("/api/logs")
+    @GetMapping(RequestPaths.LOGS)
     public List<LogStatus> logs() {
         return repository.logRows().stream().map(LogStatus::of).toList();
     }
 
     /** Публичный статус синка для виджета под кнопкой поиска: без токена и без текстов ошибок. Ответ кешируемый — виджет опрашивает его с каждой открытой страницы. */
-    @GetMapping("/api/status")
+    @GetMapping(RequestPaths.STATUS)
     public ResponseEntity<List<LogPublicStatus>> publicStatus() {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(Duration.ofSeconds(15)).cachePublic())

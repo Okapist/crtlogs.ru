@@ -16,6 +16,7 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import ru.crt.AbstractIntegrationTest;
 import ru.crt.client.KnownLog;
+import ru.crt.config.CacheConfig;
 
 /** Сквозной тест хранилища на in-memory H2: вставка реальных записей лога, поиск в семантике crt.sh, идемпотентность, сортировка, пейджинг, состояние логов. */
 class CertificateRepositoryTest extends AbstractIntegrationTest {
@@ -66,7 +67,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
 
         assertEquals(0, repository.insertCertificates(rows), "вторая вставка не добавила строк");
 
-        cacheManager.getCache("search").clear(); // иначе счётчик вернётся из кеша, а не из БД
+        cacheManager.getCache(CacheConfig.SEARCH).clear(); // иначе счётчик вернётся из кеша, а не из БД
         assertEquals(afterFirst, total(FIXTURE_DOMAIN, false),
                 "уникальность (log_url, log_index) удержала число строк");
     }
@@ -133,7 +134,7 @@ class CertificateRepositoryTest extends AbstractIntegrationTest {
         assertTrue(found.total() > 0);
         assertFalse(found.ids().isEmpty());
 
-        Object cached = cacheManager.getCache("search").get(FIXTURE_DOMAIN + "::LOGGED_AT:true:1:100").get();
+        Object cached = cacheManager.getCache(CacheConfig.SEARCH).get(FIXTURE_DOMAIN + "::LOGGED_AT:true:1:100").get();
         assertEquals(found, cached, "в кеше лежит та же пара, а не два независимых значения");
     }
 

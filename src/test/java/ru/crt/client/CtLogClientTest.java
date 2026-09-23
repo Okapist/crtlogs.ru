@@ -109,7 +109,6 @@ class CtLogClientTest {
                         .getBytes(StandardCharsets.UTF_8),
                 CtLogClient.Sth.class);
         assertEquals(8956, sth.treeSize());
-        assertEquals(1787871725409L, sth.timestamp());
     }
 
     @Test

@@ -7,7 +7,9 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.time.Duration;
+import java.util.HexFormat;
 
 import org.jspecify.annotations.NonNull;
 import org.springframework.core.annotation.Order;
@@ -25,9 +27,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final AppProperties props;
 
-    /** Простаивающие бакеты выселяет Caffeine — иначе карта росла бы всё время работы. */
+    /** Простаивающие бакеты выселяет Caffeine — иначе карта росла бы всё время работы; потолок — на случай потока запросов с разных адресов. */
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
             .expireAfterAccess(Duration.ofMinutes(1))
+            .maximumSize(100_000)
             .build();
 
     /** Неизменяемое состояние бакета заменяется целиком внутри compute() — потокобезопасно. */
@@ -48,7 +51,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (RequestPaths.STATUS.equals(path)) {
             return true;
         }
-        if (path.startsWith("/api/")) {
+        if (RequestPaths.isApi(path)) {
             return false;
         }
         if (!path.equals("/")) {
@@ -65,7 +68,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
                                     @NonNull FilterChain chain) throws ServletException, IOException {
-        if (tryAcquire(clientIp(request), System.nanoTime())) {
+        if (tryAcquire(bucketKey(clientIp(request)), System.nanoTime())) {
             chain.doFilter(request, response);
         } else {
             response.setHeader("Retry-After", "1");
@@ -87,6 +90,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
             }
         }
         return request.getRemoteAddr();
+    }
+
+    /** Ключ бакета: IPv4 — сам адрес, IPv6 — вся /64: клиенту обычно выдана именно она, и лимит на один из её 2^64 адресов — не лимит. */
+    static String bucketKey(String ip) {
+        if (ip.indexOf(':') < 0) {
+            return ip;
+        }
+        try {
+            byte[] address = InetAddress.ofLiteral(ip).getAddress();
+            if (address.length == 16) {
+                return HexFormat.of().formatHex(address, 0, 8) + "/64";
+            }
+        } catch (IllegalArgumentException e) {
+            // не литерал адреса — лимитируем как есть, лишь бы не ходить в DNS
+        }
+        return ip;
     }
 
     boolean tryAcquire(String ip, long nowNanos) {

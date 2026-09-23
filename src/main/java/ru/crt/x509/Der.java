@@ -12,9 +12,12 @@ public final class Der {
     /** Универсальные теги, которые встречаются в разбираемых здесь местах. */
     public static final int OCTET_STRING = 0x04;
     public static final int UTF8_STRING = 0x0C;
+    public static final int NUMERIC_STRING = 0x12;
     public static final int PRINTABLE_STRING = 0x13;
     public static final int T61_STRING = 0x14;
     public static final int IA5_STRING = 0x16;
+    public static final int VISIBLE_STRING = 0x1A;
+    public static final int UNIVERSAL_STRING = 0x1C;
     public static final int BMP_STRING = 0x1E;
     public static final int SEQUENCE = 0x30;
 

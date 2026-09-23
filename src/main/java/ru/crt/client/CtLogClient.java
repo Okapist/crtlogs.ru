@@ -50,7 +50,7 @@ public class CtLogClient {
     }
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Sth(long treeSize, long timestamp) {
+    public record Sth(long treeSize) {
     }
 
     public record EntriesDoc(List<EntryDoc> entries) {

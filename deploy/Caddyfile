@@ -18,7 +18,10 @@ crtlogs.ru {
 	# Стенд: crtlogs.ru/testing/ -> отдельный сервис на 8091 со своей базой.
 	# Префикс НЕ срезаем: приложение знает о нём через SERVER_SERVLET_CONTEXT_PATH,
 	# поэтому само отдаёт редирект /testing -> /testing/ и корректные пути.
-	handle /testing/* {
+	# Голый /testing тоже сюда: матчер /testing/* его не покрывает, и без него
+	# запрос ушёл бы на прод.
+	@testing path /testing /testing/*
+	handle @testing {
 		header X-Robots-Tag "noindex, nofollow"
 		reverse_proxy 127.0.0.1:8091 {
 			header_up X-Forwarded-For {remote_host}

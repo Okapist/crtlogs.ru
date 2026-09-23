@@ -18,14 +18,15 @@
   const statusLine = document.getElementById('logsStatus');
   const table = document.getElementById('logsTable');
   let timer = null;
+  let inFlight = false;
 
   async function refresh() {
+    if (inFlight) {
+      return;
+    }
+    inFlight = true;
     try {
       const resp = await fetch('api/status');
-      if (resp.status === 429) {
-        statusLine.textContent = 'лимит запросов, повторим позже';
-        return;
-      }
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -33,9 +34,12 @@
     } catch (err) {
       statusLine.textContent = 'статус недоступен: ' + err.message;
     } finally {
-      // перепланируем в любом случае: одна ошибка не должна останавливать опрос
+      inFlight = false;
+      // перепланируем при любом исходе, пока вкладка видна: одна ошибка не должна останавливать опрос
       clearTimeout(timer);
-      timer = setTimeout(refresh, 30000);
+      if (!document.hidden) {
+        timer = setTimeout(refresh, 30000);
+      }
     }
   }
 
@@ -55,6 +59,15 @@
       `<table><tr><th>Лог</th><th>Записей</th><th>Состояние</th><th>Обновлён</th></tr>${rows}</table>`;
     statusLine.textContent = 'обновлено ' + new Date().toLocaleTimeString();
   }
+
+  // скрытая вкладка не опрашивает: догоним, когда её снова откроют
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearTimeout(timer);
+    } else {
+      refresh();
+    }
+  });
 
   refresh();
 })();

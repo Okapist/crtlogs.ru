@@ -2,6 +2,7 @@ package ru.crt.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -132,6 +133,17 @@ class RateLimitFilterTest {
         MockHttpServletRequest blank = request("/api/status");
         blank.addHeader("X-Forwarded-For", "   ");
         assertEquals("127.0.0.1", filter.clientIp(blank));
+    }
+
+    /** Адреса одной IPv6 /64 делят бакет: иначе лимит обходится сменой хвоста адреса на каждый запрос. */
+    @Test
+    void ipv6AddressesShareTheBucketOfTheir64Prefix() {
+        assertEquals(RateLimitFilter.bucketKey("2001:db8:1:2::1"), RateLimitFilter.bucketKey("2001:db8:1:2:ffff::42"));
+        assertNotEquals(RateLimitFilter.bucketKey("2001:db8:1:2::1"), RateLimitFilter.bucketKey("2001:db8:1:3::1"),
+                "соседняя /64 — другой бакет");
+        assertEquals("203.0.113.7", RateLimitFilter.bucketKey("203.0.113.7"), "IPv4 — как есть");
+        assertEquals("::ffff:203.0.113.7", RateLimitFilter.bucketKey("::ffff:203.0.113.7"), "IPv4-mapped — как есть");
+        assertEquals("not-an-address:x", RateLimitFilter.bucketKey("not-an-address:x"), "мусор не роняет фильтр");
     }
 
     private void drainBurst(String ip, long nowNanos) {

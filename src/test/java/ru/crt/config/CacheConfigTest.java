@@ -14,16 +14,16 @@ class CacheConfigTest {
 
     @Test
     void dumpIsStoredUnderItsFingerprint() {
-        caches.getCache("certText").put("abc", "Certificate:\n    Data:\n");
-        assertEquals("Certificate:\n    Data:\n", caches.getCache("certText").get("abc").get());
+        caches.getCache(CacheConfig.CERT_TEXT).put("abc", "Certificate:\n    Data:\n");
+        assertEquals("Certificate:\n    Data:\n", caches.getCache(CacheConfig.CERT_TEXT).get("abc").get());
     }
 
     /** Дамп может быть null (DER не разобрался) — весовщик обязан это пережить. */
     @Test
     void certificateWithoutTextDumpCanBeCached() {
-        caches.getCache("certText").put("unparseable", null);
+        caches.getCache(CacheConfig.CERT_TEXT).put("unparseable", null);
 
-        assertNotNull(caches.getCache("certText").get("unparseable"), "запись есть");
-        assertNull(caches.getCache("certText").get("unparseable").get(), "и она пустая");
+        assertNotNull(caches.getCache(CacheConfig.CERT_TEXT).get("unparseable"), "запись есть");
+        assertNull(caches.getCache(CacheConfig.CERT_TEXT).get("unparseable").get(), "и она пустая");
     }
 }

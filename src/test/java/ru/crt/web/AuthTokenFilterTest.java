@@ -55,6 +55,9 @@ class AuthTokenFilterTest {
     @Test
     void correctTokenPasses() throws ServletException, IOException {
         assertEquals(200, run(logsRequest("Bearer secret-token")).getStatus());
+        assertEquals(200, run(logsRequest("bearer secret-token")).getStatus(),
+                "имя схемы — без учёта регистра (RFC 7235 §2.1)");
+        assertEquals(200, run(logsRequest("BASIC " + Base64.getEncoder().encodeToString("x:secret-token".getBytes()))).getStatus());
         assertTrue(passed());
     }
 
@@ -123,7 +126,6 @@ class AuthTokenFilterTest {
                 "Basic !!!не-base64!!!",          // не декодируется
                 "Basic " + Base64.getEncoder().encodeToString("no-colon".getBytes()),
                 "Token secret-token",             // чужая схема
-                "bearer secret-token",            // схема регистрозависима, как в RFC
                 "Bearer",
                 ""}) {
             assertFalse(filter.isAuthorized(logsRequest(header)), "заголовок «" + header + "» не должен пускать");

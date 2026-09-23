@@ -1,6 +1,7 @@
 package ru.crt.sync;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
@@ -38,11 +39,9 @@ public final class CtEntryParser {
         if (leafType != 0) { // 0 = timestamped_entry
             throw new IOException("неподдерживаемый leaf_type: " + leafType);
         }
-        long timestamp = 0;
-        for (int i = 2; i <= 9; i++) {
-            timestamp = (timestamp << 8) | (leaf[i] & 0xFF);
-        }
-        int entryType = ((leaf[10] & 0xFF) << 8) | (leaf[11] & 0xFF);
+        ByteBuffer header = ByteBuffer.wrap(leaf);
+        long timestamp = header.getLong(2);
+        int entryType = Short.toUnsignedInt(header.getShort(10));
 
         byte[] der;
         boolean precert;

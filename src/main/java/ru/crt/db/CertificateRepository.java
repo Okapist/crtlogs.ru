@@ -27,6 +27,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import ru.crt.client.KnownLog;
+import ru.crt.config.CacheConfig;
 import ru.crt.x509.DomainName;
 
 /** Всё обращение к БД. */
@@ -50,7 +51,7 @@ public class CertificateRepository {
                                  CacheManager caches) {
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(txManager);
-        this.caIds = caches.getCache("caIds");
+        this.caIds = caches.getCache(CacheConfig.CA_IDS);
     }
 
     /** Строка для вставки, которую готовит CtSyncService из разобранной записи лога. */
@@ -303,15 +304,12 @@ public class CertificateRepository {
     }
 
     /** Страница выдачи: сколько всего уникальных сертификатов и какие id попадают на страницу (нумерация с единицы). Оба числа — одной записью: раздельные кеши разъезжались. Дубли по sha256 сворачиваются в SQL, окно режется в БД. */
-    @Cacheable(cacheNames = "search",
+    @Cacheable(cacheNames = CacheConfig.SEARCH,
             key = "#p0 + ':' + (#p1 ? 'expired' : '') + ':' + #p2 + ':' + #p3"
                     + " + ':' + #p4 + ':' + #p5")
     public SearchResult searchPage(String q, boolean excludeExpired, SortColumn sort,
                                    boolean descending, int page, int pageSize) {
         DomainMatch match = DomainMatch.of(q);
-        if (pageSize <= 0) {
-            return new SearchResult(count(match, excludeExpired), List.of());
-        }
         long offset = (long) (Math.max(page, 1) - 1) * pageSize;
         SearchResult found = page(match, excludeExpired, sort, descending, offset, pageSize);
         return found != null ? found : new SearchResult(count(match, excludeExpired), List.of());
@@ -364,6 +362,15 @@ public class CertificateRepository {
     public CertRow certRow(long id) {
         List<CertRow> rows = loadRows(List.of(id), true);
         return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    public record DerRow(String sha256, byte[] der) {
+    }
+
+    public DerRow derRow(long id) {
+        List<DerRow> found = jdbc.query("SELECT sha256, der FROM certificate WHERE id = ?",
+                (rs, _) -> new DerRow(rs.getString(1), rs.getBytes(2)), id);
+        return found.isEmpty() ? null : found.getFirst();
     }
 
     /** Вхождения этого же сертификата (тот же sha256) во все синхронизированные логи. */

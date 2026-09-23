@@ -17,7 +17,6 @@ import ru.crt.sync.CtEntryParser;
 import ru.crt.web.CertDetails;
 import ru.crt.web.SearchRow;
 import ru.crt.x509.X509;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /** Общая загрузка фикстур и сборка объектов контракта; разобранные записи и сертификаты считаются один раз на весь прогон. */
@@ -58,10 +57,6 @@ public final class TestFixtures {
     /** Тот же ресурс байтами — в таком виде тела ответов приходят от лога. */
     public static byte[] bytes(String resource) {
         return text(resource).getBytes(StandardCharsets.UTF_8);
-    }
-
-    private static JsonNode json(String resource) {
-        return JSON.readTree(text(resource));
     }
 
     public static List<CtLogClient.EntryDoc> entries() {
@@ -142,14 +137,9 @@ public final class TestFixtures {
                 precert, occurrences, text, "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n");
     }
 
+    /** Через тот же DTO, что и клиент: snake_case-маппинг проверяется фикстурой, а не копируется. */
     private static List<CtLogClient.EntryDoc> loadEntries() {
-        JsonNode entries = json(ENTRIES).get("entries");
-        List<CtLogClient.EntryDoc> out = new ArrayList<>(entries.size());
-        for (JsonNode e : entries) {
-            out.add(new CtLogClient.EntryDoc(
-                    e.get("leaf_input").stringValue(), e.get("extra_data").stringValue()));
-        }
-        return List.copyOf(out);
+        return List.copyOf(JSON.readValue(text(ENTRIES), CtLogClient.EntriesDoc.class).entries());
     }
 
     private static List<X509Certificate> parseCertificates() {

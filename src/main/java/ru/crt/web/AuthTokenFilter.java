@@ -68,12 +68,12 @@ public class AuthTokenFilter extends OncePerRequestFilter {
                 presented.getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Токен из заголовка: {@code Bearer <токен>} либо Basic, где пароль — тот же токен. */
+    /** Токен из заголовка: {@code Bearer <токен>} либо Basic, где пароль — тот же токен. Имя схемы — без учёта регистра (RFC 7235 §2.1). */
     private static String presentedToken(String header) {
-        if (header.startsWith("Bearer ")) {
+        if (hasScheme(header, "Bearer ")) {
             return header.substring("Bearer ".length()).trim();
         }
-        if (!header.startsWith("Basic ")) {
+        if (!hasScheme(header, "Basic ")) {
             return null;
         }
         String decoded;
@@ -85,5 +85,9 @@ public class AuthTokenFilter extends OncePerRequestFilter {
         }
         int colon = decoded.indexOf(':');
         return colon < 0 ? null : decoded.substring(colon + 1);
+    }
+
+    private static boolean hasScheme(String header, String scheme) {
+        return header.regionMatches(true, 0, scheme, 0, scheme.length());
     }
 }

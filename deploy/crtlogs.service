@@ -25,8 +25,11 @@ Environment=SPRING_PROFILES_ACTIVE=prod
 # третья, а Caddyfile и crtlogs-deploy должны совпадать с ней вручную
 
 # ExitOnOutOfMemoryError + Restart=always: после OOM процесс не остаётся полуживым.
-ExecStart=/usr/bin/java -Xmx800m -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m \
-    -XX:+ExitOnOutOfMemoryError -jar /opt/crtlogs/crtlogs.jar
+# Под MemoryMax помимо кучи живут metaspace, code cache, стеки потоков и direct-буферы
+# Jetty (без явного потолка они могли бы вырасти до -Xmx); запас ~300M — чтобы cgroup
+# не убил процесс SIGKILL мимо ExitOnOutOfMemoryError и штатного закрытия H2.
+ExecStart=/usr/bin/java -Xmx700m -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m \
+    -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -jar /opt/crtlogs/crtlogs.jar
 Restart=always
 RestartSec=5
 # Жёсткий потолок на случай, если что-то поедет за пределы -Xmx (native, утечка в

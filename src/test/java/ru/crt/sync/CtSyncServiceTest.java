@@ -62,7 +62,7 @@ class CtSyncServiceTest {
     @Test
     void logListIsRefreshedAndStoredBeforeSync() throws Exception {
         logList(LOG_A);
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0));
 
         service.syncAll();
 
@@ -76,7 +76,7 @@ class CtSyncServiceTest {
     void catchesUpLogBatchByBatchAndSavesProgress() throws Exception {
         logList(LOG_A);
         props.setBatchSize(2);
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(3, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(3));
         when(client.getEntries(LOG_A, 0, 1)).thenReturn(List.of(REAL_ENTRY, REAL_ENTRY));
         when(client.getEntries(LOG_A, 2, 2)).thenReturn(List.of(REAL_ENTRY));
 
@@ -94,7 +94,7 @@ class CtSyncServiceTest {
     void progressAdvancesByActualEntryCount() throws Exception {
         logList(LOG_A);
         props.setBatchSize(100);
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(100, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(100));
         when(client.getEntries(LOG_A, 0, 99)).thenReturn(List.of(REAL_ENTRY, REAL_ENTRY));
         when(client.getEntries(LOG_A, 2, 99)).thenReturn(List.of());
 
@@ -106,12 +106,42 @@ class CtSyncServiceTest {
         verify(client, times(2)).getEntries(anyString(), anyLong(), anyLong());
     }
 
+    /** Дедлайн прохода действует и посреди среза: медленный лог не растягивает проход на часы. */
+    @Test
+    void deadlineStopsASliceBetweenBatches() throws Exception {
+        logList(LOG_A);
+        props.setBatchSize(1);
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(1_000));
+        when(client.getEntries(anyString(), anyLong(), anyLong())).thenAnswer(invocation -> {
+            Thread.sleep(20);
+            return List.of(REAL_ENTRY);
+        });
+
+        service.syncAll(System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(5));
+
+        verify(client, times(1)).getEntries(anyString(), anyLong(), anyLong());
+        verify(repository, never()).markFailed(anyString(), anyString());
+    }
+
+    /** Прерывание потока — остановка приложения: проход завершается, в last_error ничего не пишется. */
+    @Test
+    void interruptionEndsThePassWithoutMarkingTheLogFailed() throws Exception {
+        logList(LOG_A, LOG_B);
+        when(client.getSth(LOG_A)).thenThrow(new InterruptedException());
+
+        service.syncAll();
+
+        assertTrue(Thread.interrupted(), "флаг прерывания восстановлен");
+        verify(repository, never()).markFailed(anyString(), anyString());
+        verify(client, never()).getSth(LOG_B);
+    }
+
     /** Большой лог уступает следующему после BATCHES_PER_SLICE пачек. */
     @Test
     void bigLogYieldsToTheNextOneAfterOneSlice() throws Exception {
         logList(LOG_A, LOG_B);
         props.setBatchSize(1);
-        when(client.getSth(anyString())).thenReturn(new CtLogClient.Sth(25, 1));
+        when(client.getSth(anyString())).thenReturn(new CtLogClient.Sth(25));
         List<String> calls = new ArrayList<>();
         when(client.getEntries(anyString(), anyLong(), anyLong())).thenAnswer(invocation -> {
             calls.add(invocation.getArgument(0) + "#" + invocation.getArgument(1));
@@ -133,7 +163,7 @@ class CtSyncServiceTest {
     void failingLogIsRecordedAndDoesNotStopTheOthers() throws Exception {
         logList(LOG_A, LOG_B);
         when(client.getSth(LOG_A)).thenThrow(new IOException("лог недоступен"));
-        when(client.getSth(LOG_B)).thenReturn(new CtLogClient.Sth(0, 1));
+        when(client.getSth(LOG_B)).thenReturn(new CtLogClient.Sth(0));
 
         service.syncAll();
 
@@ -147,7 +177,7 @@ class CtSyncServiceTest {
     void unparseableEntryIsSkippedButProgressStillMoves() throws Exception {
         logList(LOG_A);
         props.setBatchSize(2);
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(2, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(2));
         when(client.getEntries(LOG_A, 0, 1)).thenReturn(
                 List.of(new CtLogClient.EntryDoc("!!!не-base64!!!", null), REAL_ENTRY));
 
@@ -164,7 +194,7 @@ class CtSyncServiceTest {
     void unavailableLogListFallsBackToLogsFromDatabase() throws Exception {
         when(client.fetchLogList(anyString())).thenThrow(new IOException("ctlog.json недоступен"));
         when(repository.getKnownLogs()).thenReturn(List.of(new KnownLog(LOG_A, "из БД", "Operator")));
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0));
 
         service.syncAll();
 
@@ -177,7 +207,7 @@ class CtSyncServiceTest {
     @Test
     void passStopsWhenItsTimeBudgetIsSpent() throws Exception {
         logList(LOG_A, LOG_B);
-        when(client.getSth(anyString())).thenReturn(new CtLogClient.Sth(1_000_000, 1));
+        when(client.getSth(anyString())).thenReturn(new CtLogClient.Sth(1_000_000));
 
         service.syncAll(System.nanoTime() - 1); // бюджет исчерпан ещё до первого круга
 
@@ -188,7 +218,7 @@ class CtSyncServiceTest {
     @Test
     void spentBudgetDoesNotBlockTheNextPass() throws Exception {
         logList(LOG_A);
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0));
 
         service.syncAll(System.nanoTime() - 1);
         service.syncAll();
@@ -211,7 +241,7 @@ class CtSyncServiceTest {
         first.start();
         assertTrue(started.await(5, TimeUnit.SECONDS), "первый проход должен успеть начаться");
 
-        service.scheduledSync(); // расписание не должно запускать второй проход
+        service.syncAll(); // расписание не должно запускать второй проход
 
         release.countDown();
         first.join(5_000);
@@ -222,7 +252,7 @@ class CtSyncServiceTest {
     @Test
     void applicationReadyStartsSyncInBackground() throws Exception {
         logList(LOG_A);
-        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0, 1));
+        when(client.getSth(LOG_A)).thenReturn(new CtLogClient.Sth(0));
 
         service.onApplicationReady();
 

@@ -10,6 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import ru.crt.AbstractIntegrationTest;
 import ru.crt.TestFixtures;
+import ru.crt.config.CacheConfig;
 import ru.crt.db.CertificateRepository;
 
 /** Детали сертификата: поля контракта, вхождения в логи и кеш дампа. */
@@ -70,12 +71,12 @@ class CertDetailsServiceTest extends AbstractIntegrationTest {
         long id = idsOf(FIXTURE_DOMAIN).getFirst();
 
         String dump = certDetailsService.details(id).text();
-        assertNotNull(cacheManager.getCache("certText").get(original.sha256()),
+        assertNotNull(cacheManager.getCache(CacheConfig.CERT_TEXT).get(original.sha256()),
                 "дамп должен попасть в кеш certText под отпечатком сертификата");
 
         repository.insertCertificates(List.of(inLog(original, "https://second.example/log/", 8)));
 
-        assertNotNull(cacheManager.getCache("certText").get(original.sha256()),
+        assertNotNull(cacheManager.getCache(CacheConfig.CERT_TEXT).get(original.sha256()),
                 "вставка не сбрасывает кеш дампа: DER сертификата не меняется");
         assertEquals(dump, certDetailsService.details(id).text());
     }

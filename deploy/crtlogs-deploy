@@ -21,6 +21,12 @@
 #
 set -euo pipefail
 
+# Если ssh-сессия оборвётся после того, как jar уже прочитан, запись в закрытый stderr
+# даёт SIGPIPE — и bash умер бы до отката. Сообщения после установки поэтому идут
+# через say(): SIGPIPE игнорируется, неудачный echo не фатален.
+trap '' PIPE
+say() { echo "$@" >&2 || true; }
+
 # Префикс для прогона скрипта на стенде разработчика. Через sudo его не подставить:
 # env_reset (умолчание sudoers) вычищает окружение вызывающего, так что в боевом
 # вызове он всегда пуст.
@@ -55,9 +61,13 @@ staged=$(mktemp "$APP_DIR/.crtlogs.jar.XXXXXX")
 trap 'rm -f "$staged"' EXIT
 cat > "$staged"
 
-# приехавшее должно быть непустым zip-архивом, а не нулём байт и не текстом ошибки
-if [ ! -s "$staged" ] || [ "$(head -c 2 "$staged")" != "PK" ]; then
-    echo "деплой отменён: со stdin пришёл не jar" >&2
+# Приехавшее должно быть целым zip-архивом, а не нулём байт, текстом ошибки или
+# обрывком: если соединение упало посреди передачи, cat всё равно вернёт 0. Целость
+# проверяет запись End Of Central Directory (PK\5\6) — она пишется последней и у
+# boot-jar стоит в самых последних 22 байтах.
+if [ ! -s "$staged" ] || [ "$(head -c 2 "$staged")" != "PK" ] \
+        || [ "$(tail -c 22 "$staged" | head -c 4)" != $'PK\x05\x06' ]; then
+    echo "деплой отменён: со stdin пришёл не jar или он передан не целиком" >&2
     exit 1
 fi
 
@@ -84,22 +94,26 @@ restart_and_wait() {
 }
 
 if restart_and_wait; then
-    echo "деплой ок: $SERVICE отвечает на $HEALTH"
+    echo "деплой ок: $SERVICE отвечает на $HEALTH" || true
     exit 0
 fi
 
-echo "$SERVICE не поднялся за $((ATTEMPTS * DELAY)) с — откат" >&2
+say "$SERVICE не поднялся за $((ATTEMPTS * DELAY)) с — откат"
 journalctl -u "$SERVICE" -n 50 --no-pager >&2 || true
 
 if [ ! -f "$PREVIOUS" ]; then
-    echo "предыдущей версии нет, откатывать не на что" >&2
+    say "предыдущей версии нет, откатывать не на что"
     exit 1
 fi
 
-cp -p "$PREVIOUS" "$TARGET"
+# так же атомарно, как установка: systemd в это время перезапускает упавший сервис
+# каждые RestartSec, и JVM не должна застать jar записанным наполовину
+rollback=$(mktemp "$APP_DIR/.crtlogs.jar.XXXXXX")
+cp -p "$PREVIOUS" "$rollback"
+mv -f "$rollback" "$TARGET"
 if restart_and_wait; then
-    echo "откат выполнен, работает предыдущая версия" >&2
+    say "откат выполнен, работает предыдущая версия"
 else
-    echo "откат не помог, сервис не отвечает" >&2
+    say "откат не помог, сервис не отвечает"
 fi
 exit 1

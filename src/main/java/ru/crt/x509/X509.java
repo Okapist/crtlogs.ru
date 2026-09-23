@@ -35,6 +35,11 @@ public final class X509 {
         return HexFormat.of().withUpperCase().formatHex(digest("SHA-1", der));
     }
 
+    /** Серийный номер hex в нижнем регистре — так он лежит в certificate.serial. */
+    public static String serialHex(X509Certificate cert) {
+        return HexFormat.of().formatHex(cert.getSerialNumber().toByteArray());
+    }
+
     /** DER -> PEM: та же форма, что отдаёт {@code openssl x509}, строки по 64 символа. */
     public static String toPem(byte[] der) {
         return "-----BEGIN CERTIFICATE-----\n" + PEM_BODY.encodeToString(der)

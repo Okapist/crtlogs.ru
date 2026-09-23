@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import ru.crt.db.CertRow;
 import ru.crt.db.CertificateRepository;
+import ru.crt.x509.DomainName;
 
 /** Единственный вход в поиск: проверка запроса, счётчик, окно страницы и строки выдачи в контракте crt.sh. Отказ — ResponseStatusException: код 400 и текст — часть контракта. */
 @Service
@@ -29,7 +30,9 @@ public class SearchService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Пустой запрос: введите домен целиком (example.ru) или шаблон (%.example.ru).");
         }
-        if (isTooBroadcast(q)) {
+        // проверяется та же форма, что уйдёт в SQL: nameprep удаляет невидимые символы
+        // (мягкий перенос и т. п.), и «%a<U+00AD>%» в сыром виде прошёл бы как два значащих
+        if (isTooBroadcast(DomainName.toIndexForm(q))) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Слишком общий шаблон: помимо подстановочных % и _ в запросе должно остаться"
                             + " не меньше " + MIN_PATTERN_CHARS
@@ -40,10 +43,10 @@ public class SearchService {
         return new SearchPage(rows(repository.certRows(found.ids()), found.total()), found.total());
     }
 
-    /** Шаблон с одним значащим символом или меньше ({@code %}, {@code %a%}) — «выдай базу целиком». */
+    /** Шаблон с одним значащим символом или меньше ({@code %}, {@code %a%}) — «выдай базу целиком». Обратная косая — экранирование LIKE в H2 ({@code %\a%} = {@code %a%}), значащей не считается. */
     static boolean isTooBroadcast(String q) {
         return CertificateRepository.isWildcard(q)
-                && q.replace("%", "").replace("_", "").length() < MIN_PATTERN_CHARS;
+                && q.replace("%", "").replace("_", "").replace("\\", "").length() < MIN_PATTERN_CHARS;
     }
 
     /** Строки БД -> строки выдачи; total кладётся в result_count каждой строки. */

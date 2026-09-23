@@ -60,6 +60,9 @@ class SearchServiceTest extends AbstractIntegrationTest {
                 () -> search("%")).getStatusCode());
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ResponseStatusException.class,
                 () -> search("%_%")).getStatusCode());
+        // мягкий перенос nameprep удаляет: в SQL ушло бы %a% — вся база
+        assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ResponseStatusException.class,
+                () -> search("%a\u00AD%")).getStatusCode());
     }
 
     @Test
@@ -67,6 +70,7 @@ class SearchServiceTest extends AbstractIntegrationTest {
         assertTrue(SearchService.isTooBroadcast("%"), "один процент — это вся база");
         assertTrue(SearchService.isTooBroadcast("%._"));
         assertTrue(SearchService.isTooBroadcast("%a%"), "одного значащего символа мало");
+        assertTrue(SearchService.isTooBroadcast("%\\a%"), "\\ — экранирование LIKE, для H2 это %a%");
         assertFalse(SearchService.isTooBroadcast("%vk%"), "поиск по вхождению двухбуквенного имени");
         assertFalse(SearchService.isTooBroadcast("%ru"));
         assertFalse(SearchService.isTooBroadcast("%.example.ru"));

@@ -2,6 +2,7 @@ package ru.crt.web;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.http.MediaType;
 import org.springframework.web.util.HtmlUtils;
 import ru.crt.db.SortColumn;
@@ -443,7 +444,7 @@ final class HtmlView {
                             <TD class="mono sm">%s</TD>
                           </TR>
                         </TABLE>""".formatted(
-                                esc(d.sha256().toUpperCase()),
+                                esc(d.sha256().toUpperCase(Locale.ROOT)),
                                 esc(d.sha1())));
         String body = """
                   <BR>

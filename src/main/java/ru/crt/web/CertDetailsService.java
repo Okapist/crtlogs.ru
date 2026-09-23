@@ -4,6 +4,7 @@ import java.util.List;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
+import ru.crt.config.CacheConfig;
 import ru.crt.db.CertRow;
 import ru.crt.db.CertificateRepository;
 import ru.crt.x509.X509;
@@ -18,7 +19,7 @@ public class CertDetailsService {
 
     public CertDetailsService(CertificateRepository repository, CacheManager caches) {
         this.repository = repository;
-        this.certText = caches.getCache("certText");
+        this.certText = caches.getCache(CacheConfig.CERT_TEXT);
     }
 
     /** Детали сертификата; null, если такого id нет. Имена — в форме показа ({@link DisplayNames}). */
@@ -57,7 +58,7 @@ public class CertDetailsService {
 
     /** PEM сертификата; null, если такого id нет. */
     public PemFile pem(long id) {
-        CertRow c = repository.certRow(id);
+        CertificateRepository.DerRow c = repository.derRow(id);
         return c == null ? null : new PemFile(c.sha256(), X509.toPem(c.der()));
     }
 

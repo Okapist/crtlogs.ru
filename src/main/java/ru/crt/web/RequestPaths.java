@@ -19,6 +19,11 @@ final class RequestPaths {
     /** Статус логов с текстами ошибок — закрыт токеном. */
     static final String LOGS = "/api/logs";
 
+    /** Маршрут /api/** (по уже нормализованному пути): лимит частоты и отказ в JSON. */
+    static boolean isApi(String normalizedPath) {
+        return normalizedPath.startsWith("/api/");
+    }
+
     static String normalized(HttpServletRequest request) {
         String uri = request.getRequestURI();
         String context = request.getContextPath();

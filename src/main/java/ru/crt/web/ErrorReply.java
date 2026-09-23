@@ -20,7 +20,7 @@ final class ErrorReply {
     /** Клиент пришёл за JSON: явный {@code output=json} либо любой эндпоинт /api/**. */
     static boolean wantsJson(HttpServletRequest request) {
         return "json".equals(request.getParameter("output"))
-                || RequestPaths.normalized(request).startsWith("/api/");
+                || RequestPaths.isApi(RequestPaths.normalized(request));
     }
 
     /** Страница отказа — та же главная, в форме которой остался исходный запрос и фильтр. */

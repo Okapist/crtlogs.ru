@@ -142,8 +142,9 @@ sudo visudo -c        # проверка синтаксиса до выхода 
 
 ```bash
 ./gradlew bootJar        # на машине разработки
-ssh user@crtlogs.ru 'sudo /usr/local/sbin/crtlogs-deploy production' < build/libs/crtlogs.ru-*.jar
-ssh user@crtlogs.ru 'sudo /usr/local/sbin/crtlogs-deploy testing'    < build/libs/crtlogs.ru-*.jar
+scp build/libs/crtlogs.ru-*.jar user@crtlogs.ru:~/crtlogs.jar
+ssh -t user@crtlogs.ru 'sudo /usr/local/sbin/crtlogs-deploy production < ~/crtlogs.jar'
+ssh -t user@crtlogs.ru 'sudo /usr/local/sbin/crtlogs-deploy testing    < ~/crtlogs.jar'
 ```
 
 Здесь ещё можно ходить своей учёткой с sudo; деплой-пользователи нужны только для CI.
@@ -182,7 +183,8 @@ sudo install -m 600 -o deploy-prod -g deploy-prod \
 Отпечаток сервера (без него CI пришлось бы отключить проверку хоста):
 
 ```bash
-ssh-keyscan -p 22 crtlogs.ru
+ssh-keyscan -p 22 crtlogs.ru   # ровно те хост и порт, что пойдут в SSH_HOST и SSH_PORT:
+                               # для IP или другого порта known_hosts ищется по ним
 ```
 
 Секреты (Settings → Secrets and variables → Actions → *Secrets*):
