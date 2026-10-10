@@ -1,0 +1,191 @@
+package ru.crt.sync;
+
+import java.security.cert.X509Certificate;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import ru.crt.client.CtLogClient;
+import ru.crt.client.KnownLog;
+import ru.crt.config.AppProperties;
+import ru.crt.db.CertificateRepository;
+import ru.crt.x509.X509;
+
+/** Инкрементальная синхронизация всех логов из ctlog.json в локальную БД. Логи обходятся по кругу срезами, ошибка одного лога не останавливает остальные; прогресс каждого лога — в ct_log.last_synced_index. */
+@Service
+public class CtSyncService {
+
+    private static final Logger log = LoggerFactory.getLogger(CtSyncService.class);
+
+    /** Пачек подряд у одного лога, прежде чем перейти к следующему. */
+    private static final int BATCHES_PER_SLICE = 20;
+
+    /** Предел прохода по времени: без него догон холодной базы шёл бы часами, а следующий запуск лишь писал бы «предыдущий ещё работает». */
+    private static final Duration MAX_PASS_DURATION = Duration.ofMinutes(30);
+
+    private final CtLogClient client;
+    private final CertificateRepository repository;
+    private final AppProperties props;
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    /** Начало текущего прохода — только чтобы показать в логе, сколько он уже идёт. */
+    private volatile long passStartedNanos;
+
+    public CtSyncService(CtLogClient client, CertificateRepository repository, AppProperties props) {
+        this.client = client;
+        this.repository = repository;
+        this.props = props;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onApplicationReady() {
+        // отдельный поток: синк — блокирующие HTTP и JDBC, а не ForkJoinPool.commonPool
+        Thread worker = new Thread(this::syncAll, "ct-sync-initial");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    // первый проход запускает onApplicationReady, планировщик — только последующие
+    @Scheduled(initialDelayString = "${ct.sync-interval:PT10M}", fixedDelayString = "${ct.sync-interval:PT10M}")
+    public void syncAll() {
+        syncAll(System.nanoTime() + MAX_PASS_DURATION.toNanos());
+    }
+
+    void syncAll(long deadlineNanos) {
+        if (!running.compareAndSet(false, true)) {
+            log.info("Предыдущий проход синхронизации работает уже {} мин — пропуск",
+                    Duration.ofNanos(System.nanoTime() - passStartedNanos).toMinutes());
+            return;
+        }
+        passStartedNanos = System.nanoTime();
+        try {
+            Map<String, Long> progress = repository.loadSyncProgress();
+            List<KnownLog> pending = knownLogs();
+            while (!pending.isEmpty()) {
+                if (System.nanoTime() - deadlineNanos >= 0) { // разность, а не сравнение: nanoTime переполняется
+                    log.info("Бюджет прохода исчерпан, {} логов догоним следующим проходом",
+                            pending.size());
+                    return;
+                }
+                List<KnownLog> next = new ArrayList<>(pending.size());
+                for (KnownLog ctLog : pending) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        log.info("Проход синхронизации прерван — приложение останавливается");
+                        return;
+                    }
+                    if (syncSlice(ctLog, progress, deadlineNanos)) {
+                        next.add(ctLog);
+                    }
+                }
+                pending = next;
+            }
+        } catch (Exception e) {
+            log.warn("Ошибка прохода синхронизации: {}", e.toString());
+        } finally {
+            running.set(false);
+        }
+    }
+
+    /** Свежий ctlog.json; если недоступен — логи, уже сохранённые в БД. */
+    private List<KnownLog> knownLogs() {
+        try {
+            List<KnownLog> fresh = client.fetchLogList(props.getLogListUrl());
+            for (KnownLog l : fresh) {
+                repository.upsertLog(l.url(), l.description(), l.operator());
+            }
+            return fresh;
+        } catch (Exception e) {
+            log.warn("ctlog.json недоступен ({}), работаем по логам из БД", e.toString());
+            return repository.getKnownLogs();
+        }
+    }
+
+    /**
+     * Догоняет лог не более чем на {@link #BATCHES_PER_SLICE} пачек или до дедлайна прохода.
+     * @return true, если лог догнан не полностью и его надо взять на следующем круге
+     */
+    private boolean syncSlice(KnownLog ctLog, Map<String, Long> progress, long deadlineNanos) {
+        long processed = progress.getOrDefault(ctLog.url(), 0L);
+        try {
+            long treeSize = client.getSth(ctLog.url()).treeSize();
+            for (int batch = 0; batch < BATCHES_PER_SLICE; batch++) {
+                // дедлайн проверяется и внутри среза: 20 пачек по медленному логу — это часы, а не минуты
+                if (batch > 0 && System.nanoTime() - deadlineNanos >= 0) {
+                    return true;
+                }
+                if (processed >= treeSize) {
+                    repository.markCaughtUp(ctLog.url(), treeSize);
+                    return false;
+                }
+                long end = Math.min(processed + props.getBatchSize() - 1, treeSize - 1);
+                List<CtLogClient.EntryDoc> entries = client.getEntries(ctLog.url(), processed, end);
+                if (entries.isEmpty()) {
+                    // сервер отдал меньше запрошенного до конца — продолжим в следующий проход
+                    repository.markCaughtUp(ctLog.url(), treeSize);
+                    return false;
+                }
+                List<CertificateRepository.NewCert> rows = new ArrayList<>(entries.size());
+                for (int i = 0; i < entries.size(); i++) {
+                    long index = processed + i;
+                    try {
+                        rows.add(toNewCert(ctLog.url(), index, entries.get(i)));
+                    } catch (Exception e) {
+                        log.warn("Запись {}#{} не разобрана, пропускаем: {}", ctLog.url(), index, e.toString());
+                    }
+                }
+                int skipped = repository.insertCertificates(rows);
+                processed += entries.size(); // продвигаемся на фактическое количество
+                repository.advance(ctLog.url(), treeSize, processed);
+                log.info("Синк {}: {}/{} записей{}", ctLog.description(), processed, treeSize,
+                        skipped > 0 ? " (не вставлено " + skipped + ")" : "");
+            }
+            return true;
+        } catch (InterruptedException e) {
+            // остановка приложения, а не ошибка лога: флаг вернуть, last_error не трогать
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.warn("Лог {} недоступен: {}", ctLog.url(), e.toString());
+            repository.markFailed(ctLog.url(), e.toString());
+            return false;
+        } finally {
+            progress.put(ctLog.url(), processed);
+        }
+    }
+
+    /** Запись лога -> строка БД; public static, чтобы тесты проверяли этот маппинг, а не свою копию. */
+    public static CertificateRepository.NewCert toNewCert(String logUrl, long index,
+                                                          CtLogClient.EntryDoc entry) throws Exception {
+        CtEntryParser.ParsedEntry parsed = CtEntryParser.parse(entry.leafInput(), entry.extraData());
+        X509Certificate cert = parsed.certificate();
+        byte[] der = cert.getEncoded();
+        return new CertificateRepository.NewCert(
+                logUrl,
+                index,
+                der,
+                X509.sha256Hex(der),
+                X509.serialHex(cert),
+                cert.getSubjectX500Principal().getName(),
+                cert.getIssuerX500Principal().getName(),
+                utc(cert.getNotBefore().toInstant()),
+                utc(cert.getNotAfter().toInstant()),
+                utc(Instant.ofEpochMilli(parsed.entryTimestampMs())),
+                parsed.precert(),
+                parsed.domains());
+    }
+
+    /** Даты храним в UTC-локальном представлении, независимо от таймзоны машины. */
+    private static LocalDateTime utc(Instant instant) {
+        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    }
+
+}

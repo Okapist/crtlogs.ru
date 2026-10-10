@@ -1,0 +1,71 @@
+# systemd-юнит приложения. Установка:
+#   sudo cp deploy/crtlogs.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now crtlogs
+# Проверить ограничения: systemd-analyze security crtlogs
+[Unit]
+Description=crtlogs.ru - поиск по российским CT-логам
+Documentation=https://github.com/Okapist/crtlogs.ru
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=crtlogs
+Group=crtlogs
+WorkingDirectory=/opt/crtlogs
+SyslogIdentifier=crtlogs
+
+# Секреты (CT_AUTH_TOKEN) — в файле с правами 600, а не в Environment= юнита:
+# /etc/systemd/system/*.service читается всеми, и `systemctl cat crtlogs` показал бы
+# токен любому пользователю сервера. Ведущий '-' = файла может не быть
+# (тогда токен пуст и /api/logs просто закрыт).
+EnvironmentFile=-/etc/crtlogs/env
+Environment=SPRING_PROFILES_ACTIVE=prod
+# порт не переопределяем: он задан в application.yml. Копий и так две — здесь была
+# третья, а Caddyfile и crtlogs-deploy должны совпадать с ней вручную
+
+# ExitOnOutOfMemoryError + Restart=always: после OOM процесс не остаётся полуживым.
+# Под MemoryMax помимо кучи живут metaspace, code cache, стеки потоков и direct-буферы
+# Jetty (без явного потолка они могли бы вырасти до -Xmx); запас ~300M — чтобы cgroup
+# не убил процесс SIGKILL мимо ExitOnOutOfMemoryError и штатного закрытия H2.
+ExecStart=/usr/bin/java -Xmx700m -XX:+UseSerialGC -XX:MaxMetaspaceSize=192m \
+    -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -jar /opt/crtlogs/crtlogs.jar
+Restart=always
+RestartSec=5
+# Жёсткий потолок на случай, если что-то поедет за пределы -Xmx (native, утечка в
+# драйвере): сервис будет убит и перезапущен, но не утянет за собой Caddy и sshd.
+MemoryMax=1000M
+KillSignal=SIGTERM
+# H2 должна успеть закрыть файл: недозакрытая база уходит в recovery на следующем старте
+TimeoutStopSec=60
+
+# --- ограничение прав ---
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+# единственное, что приложению нужно писать: файловая H2
+ReadWritePaths=/opt/crtlogs/data
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# порт 8090 > 1024, привилегии не нужны ни одной
+CapabilityBoundingSet=
+AmbientCapabilities=
+# MemoryDenyWriteExecute несовместим с JIT — оставляем выключенным осознанно
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target

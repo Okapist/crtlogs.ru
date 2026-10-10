@@ -1,0 +1,87 @@
+# Сборка, тесты и раскатка СТЕНДА. Прод отсюда не раскатывается вообще — для него
+# есть отдельный workflow deploy-production.yml, запускаемый только вручную.
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# Заданию хватает чтения кода; доступ к серверу идёт через секреты, а не GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # PR-прогоны отменяем при новом пуше, прогоны master — нет: отмена на середине
+  # оставила бы сервер с наполовину выполненным деплоем
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          # тот же, что в java.toolchain: иначе Gradle начнёт качать JDK сам
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          validate-wrappers: true # сверяет контрольную сумму gradle-wrapper.jar
+
+      - name: Сборка и тесты
+        run: ./gradlew build
+
+      - name: Отчёты упавших тестов
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: build/reports/tests/test
+          retention-days: 7
+
+      - name: Артефакт для деплоя
+        # на PR job deploy-staging не запускается, и упаковывать fat-jar незачем
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: jar
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy-staging:
+    needs: build
+    # Push в master раскатывает ТОЛЬКО стенд (crtlogs.ru/testing/).
+    # DEPLOY_ENABLED=true — выключатель на случай, если сервер ещё не готов.
+    if: github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://crtlogs.ru/testing/
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    steps:
+      # из репозитория нужен только composite action, сам код на сервер не уезжает
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: jar
+          path: dist
+
+      - uses: ./.github/actions/ssh-deploy
+        with:
+          target: testing
+          host: ${{ secrets.SSH_HOST }}
+          user: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          port: ${{ vars.SSH_PORT || 22 }}

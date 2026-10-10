@@ -1,0 +1,79 @@
+/* Общий каркас страниц в стиле crt.sh. Подключается всеми тремя страницами HtmlView
+   (главная, результаты, сертификат), чтобы бренд правился в одном месте. Специфика
+   страницы остаётся у страницы. */
+a {
+  color: #015258;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+body {
+  font: 12pt "DM Sans", sans-serif;
+  padding-top: 10px;
+  text-align: center;
+  margin: 0;
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
+}
+form {
+  margin: 0;
+}
+span.crtsh {
+  background-color: #015258;
+  color: #FFFFFF;
+  font: bold 30px "Urbanist", sans-serif;
+  padding: 2px 20px;
+  border-radius: 6px;
+}
+span.title {
+  color: #333132;
+  font: bold 30px "Urbanist", sans-serif;
+  padding: 10px 12px;
+}
+.header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+table {
+  border-collapse: collapse;
+  color: #222222;
+  font: 10pt "DM Sans", sans-serif;
+  margin-left: auto;
+  margin-right: auto;
+}
+td, th {
+  border: 1px solid #CCCCCC;
+  padding: 0px 2px;
+  text-align: left;
+  vertical-align: top;
+}
+td.outer, th.outer {
+  padding: 2px 20px;
+}
+/* Roboto Mono, а не DM Mono: подключён шрифтами ниже именно он, DM Mono молча
+   деградировал в системный моноширинный. */
+table.identities td {
+  font: 9pt "Roboto Mono", monospace;
+  padding: 4px 8px;
+}
+/* Выравнивание колонок таблицы Certificates — классами, а не инлайновым style в
+   каждой ячейке каждой строки выдачи. */
+table.identities .center {
+  text-align: center;
+}
+table.identities .nowrap {
+  white-space: nowrap;
+}
+table.identities .wrap {
+  white-space: normal;
+}
+.copyright {
+  font: 8pt "DM Sans", sans-serif;
+  color: #000000;
+  text-align: center;
+  margin-top: 56px;
+}

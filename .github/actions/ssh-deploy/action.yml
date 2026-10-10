@@ -1,0 +1,58 @@
+# Общие шаги установки jar на сервер. Вынесены из workflow, потому что их два —
+# автоматический стенд и ручной прод — и расходиться они не должны.
+name: ssh-deploy
+description: Заливает jar на сервер по SSH и запускает привилегированный скрипт установки
+
+inputs:
+  target:
+    description: Окружение на сервере — production или testing
+    required: true
+  host:
+    required: true
+  user:
+    required: true
+  key:
+    description: Приватный SSH-ключ деплой-пользователя
+    required: true
+  known-hosts:
+    description: Отпечаток сервера (вывод ssh-keyscan)
+    required: true
+  port:
+    default: '22'
+
+runs:
+  using: composite
+  steps:
+    - name: Ключ и known_hosts
+      shell: bash
+      env:
+        SSH_KEY: ${{ inputs.key }}
+        SSH_KNOWN_HOSTS: ${{ inputs.known-hosts }}
+      run: |
+        set -euo pipefail
+        install -m 700 -d ~/.ssh
+        printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+        chmod 600 ~/.ssh/id_deploy
+        # без known_hosts ssh либо откажется соединяться, либо (с StrictHostKeyChecking=no)
+        # молча примет любой хост — то есть приватный ключ уедет первому, кто перехватит DNS
+        printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        chmod 600 ~/.ssh/known_hosts
+
+    - name: Установка на сервер
+      shell: bash
+      env:
+        SSH_HOST: ${{ inputs.host }}
+        SSH_USER: ${{ inputs.user }}
+        SSH_PORT: ${{ inputs.port }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        jar=$(ls dist/*.jar)
+        echo "деплою $jar -> $TARGET"
+        # jar идёт прямо в stdin привилегированного скрипта: на сервере не остаётся
+        # промежуточного файла, который можно подменить символьной ссылкой.
+        # Скрипт сам перезапускает сервис, ждёт ответа и откатывается, если не поднялся.
+        # Окружение — аргумент, и sudoers выдан на него отдельно: ключ стенда
+        # физически не может запустить установку в прод.
+        ssh -p "$SSH_PORT" -i ~/.ssh/id_deploy -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" "sudo /usr/local/sbin/crtlogs-deploy $TARGET" < "$jar"

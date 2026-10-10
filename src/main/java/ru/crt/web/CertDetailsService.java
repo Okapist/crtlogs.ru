@@ -1,0 +1,76 @@
+package ru.crt.web;
+
+import java.util.List;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.stereotype.Service;
+import ru.crt.config.CacheConfig;
+import ru.crt.db.CertRow;
+import ru.crt.db.CertificateRepository;
+import ru.crt.x509.X509;
+
+/** Детали сертификата для страницы и {@code /api/certs/{id}}: строка БД плюс вхождения в логи, отпечатки, openssl-дамп и PEM. */
+@Service
+public class CertDetailsService {
+
+    private final CertificateRepository repository;
+    /** Дамп по отпечатку — единственная дорогая часть деталей; политика в {@code CacheConfig}. */
+    private final Cache certText;
+
+    public CertDetailsService(CertificateRepository repository, CacheManager caches) {
+        this.repository = repository;
+        this.certText = caches.getCache(CacheConfig.CERT_TEXT);
+    }
+
+    /** Детали сертификата; null, если такого id нет. Имена — в форме показа ({@link DisplayNames}). */
+    public CertDetails details(long id) {
+        CertRow c = repository.certRow(id);
+        if (c == null) {
+            return null;
+        }
+        List<String> domains = DisplayNames.domains(c.domains());
+        return new CertDetails(
+                c.id(),
+                c.issuerCaId(),
+                c.issuerName(),
+                DisplayNames.commonName(c.subjectDn()),
+                DisplayNames.nameValue(domains),
+                domains,
+                c.logUrl(),
+                c.logIndex(),
+                c.sha256(),
+                X509.sha1Hex(c.der()),
+                c.serial(),
+                c.subjectDn(),
+                c.issuerDn(),
+                Timestamps.format(c.notBefore()),
+                Timestamps.format(c.notAfter()),
+                Timestamps.format(c.entryTs()),
+                c.precert(),
+                occurrences(c.sha256()),
+                dump(c),
+                X509.toPem(c.der()));
+    }
+
+    /** Файл для скачивания ({@code /?d=}): без дампа и вхождений, которые ему не нужны. */
+    public record PemFile(String sha256, String pem) {
+    }
+
+    /** PEM сертификата; null, если такого id нет. */
+    public PemFile pem(long id) {
+        CertificateRepository.DerRow c = repository.derRow(id);
+        return c == null ? null : new PemFile(c.sha256(), X509.toPem(c.der()));
+    }
+
+    /** Дамп или null; null тоже кешируется — на битой записи он не начнёт получаться. */
+    private String dump(CertRow c) {
+        return certText.get(c.sha256(), () -> CertTextDump.render(c.der()));
+    }
+
+    private List<CertDetails.LogOccurrence> occurrences(String sha256) {
+        return repository.occurrences(sha256).stream()
+                .map(o -> new CertDetails.LogOccurrence(o.logUrl(), o.description(), o.operator(),
+                        o.logIndex(), Timestamps.format(o.entryTs())))
+                .toList();
+    }
+}

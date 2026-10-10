@@ -1,0 +1,18 @@
+# Обновления приходят PR-ами, а PR прогоняется тем же ci.yml — то есть предложение
+# обновиться сразу проверено тестами.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Spring Boot и его стартеры двигаются одной версией — незачем плодить PR на каждый
+      spring:
+        patterns: ["org.springframework.boot*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

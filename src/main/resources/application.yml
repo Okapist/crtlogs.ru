@@ -1,0 +1,39 @@
+server:
+  # 8080 на этой машине занят встроенным сервером IntelliJ IDEA; меняется через SERVER_PORT
+  port: 8090
+
+spring:
+  datasource:
+    # Без AUTO_SERVER: он поднимает TCP-сервер H2 с -tcpAllowOthers на всех интерфейсах,
+    # а пользователь по умолчанию — sa с пустым паролем, то есть любой, кто дотянется до
+    # порта, получает всю БД и RCE через CREATE ALIAS ... FOR "java.lang.Runtime.exec".
+    # Чтобы открыть файл из IDEA, остановите приложение (embedded-режим — один процесс).
+    url: jdbc:h2:file:./data/ctlog
+  sql:
+    init:
+      mode: always # schema.sql на каждом старте (там IF NOT EXISTS)
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # Статика (site.css, logs-status.*, metrika.js, readable-url.js) отдавалась
+          # только с Last-Modified, из-за чего браузер на каждый показ страницы слал
+          # условный запрос за каждым файлом. Имена файлов не версионированы, поэтому
+          # срок короткий: после деплоя правки доезжают максимум за 15 минут.
+          max-age: 15m
+          cache-public: true
+
+ct:
+  # Здесь только то, что отличается от дефолтов ru.crt.config.AppProperties или
+  # берётся из окружения. Остальные ключи (log-list-url, batch-size, rate-limit,
+  # sync-interval — его читает @Scheduled в CtSyncService) дублировали бы их значение:
+  # правка в Java тогда молча не работала бы.
+
+  # Доверенные сертификаты УЦ Минцифры: серверы их CT-логов не присылают промежуточный
+  # сертификат, поэтому нужны и корневой, и Sub CA. Лежат в jar (src/main/resources/trust,
+  # см. README рядом с ними), поэтому на сервере ничего доустанавливать не нужно.
+  # JDK не модифицируется — сертификаты добавляются к стандартному cacerts в памяти.
+  # CT_TRUST_CERT переопределяет список; путь без схемы означает файл на диске.
+  trust-cert: ${CT_TRUST_CERT:classpath:trust/russian_trusted_root_ca.crt,classpath:trust/russian_trusted_sub_ca_2024.crt}
+  auth:
+    token: ${CT_AUTH_TOKEN:} # пусто => /api/logs всегда 401

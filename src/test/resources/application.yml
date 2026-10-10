@@ -1,0 +1,11 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+
+ct:
+  # клиент в тестах замокан, значение нужно только AppPropertiesTest как образец привязки
+  log-list-url: http://localhost:1/none
+  rate-limit:
+    enabled: false
+  auth:
+    token: test-token
