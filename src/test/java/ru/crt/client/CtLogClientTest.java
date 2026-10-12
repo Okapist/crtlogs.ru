@@ -215,7 +215,7 @@ class CtLogClientTest {
         assertArrayEquals(new byte[]{1, 2, 3, 4}, body.getBody().toCompletableFuture().get());
     }
 
-    /** Ответ сверх предела обрывает чтение — стенд живёт под -Xmx128m. */
+    /** Ответ сверх предела обрывает чтение — стенд живёт под -Xmx96m. */
     @Test
     void oversizedBodyIsRejectedAndTheSubscriptionCancelled() {
         RecordingSubscription subscription = new RecordingSubscription();
