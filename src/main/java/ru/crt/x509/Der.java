@@ -66,7 +66,7 @@ public final class Der {
                 }
             }
             int start = off + 1 + lengthBytes;
-            if (length > Integer.MAX_VALUE || start > limit || length > limit - start) {
+            if (start > limit || length > limit - start) {
                 return null;
             }
             return new Tlv(der[off] & 0xFF, start, (int) length);

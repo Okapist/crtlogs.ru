@@ -62,7 +62,6 @@ public class CertDetailsService {
         return c == null ? null : new PemFile(c.sha256(), X509.toPem(c.der()));
     }
 
-    /** Дамп или null; null тоже кешируется — на битой записи он не начнёт получаться. */
     private String dump(CertRow c) {
         return certText.get(c.sha256(), () -> CertTextDump.render(c.der()));
     }
